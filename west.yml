@@ -1,0 +1,21 @@
+manifest:
+
+  projects:
+    - name: zephyr
+      url: https://github.com/zephyrproject-rtos/zephyr
+      revision: v3.5.0
+      path: zephyr
+      west-commands: scripts/west-commands.yml
+      import: 
+        name-allowlist:
+          - cmsis
+          - hal_stm32
+
+    - name: kyvernitis 
+      url: https://github.com/waseemr02/kyvernitis
+      revision: add-mother-inverse
+      path: modules/lib/kyvernitis
+
+
+  self:
+    path: R2-D2
