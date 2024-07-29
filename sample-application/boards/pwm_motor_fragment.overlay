@@ -1,0 +1,23 @@
+/ {
+        motor {
+                compatible = "pwm-motors";
+                motor1: motor1 {
+                        pwms = <&pwm2 4 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
+                        min-pulse = <PWM_USEC(700)>;
+                        max-pulse = <PWM_USEC(2500)>;
+                };
+        };
+        aliases {
+                motor1 = &motor1;
+        };
+};
+&timers2 {
+    status = "okay";
+        st,prescaler = <1679>;
+    pwm2: pwm {
+        status = "okay";
+        pinctrl-0 = <&tim2_ch4_pa3>;
+        pinctrl-names = "default";
+    };
+};
+
