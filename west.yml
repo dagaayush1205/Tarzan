@@ -15,6 +15,7 @@ manifest:
       url: https://github.com/waseemr02/kyvernitis
       revision: add-mother-inverse
       path: modules/lib/kyvernitis
+      import: true
 
 
   self:
