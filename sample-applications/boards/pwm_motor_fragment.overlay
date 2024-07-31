@@ -1,7 +1,7 @@
 / {
         motor {
                 compatible = "pwm-motors";
-                motor1: motor1 {
+                motor_1: motor-1 {
                         pwms = <&pwm2 4 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
                         min-pulse = <PWM_USEC(700)>;
                         max-pulse = <PWM_USEC(2500)>;
