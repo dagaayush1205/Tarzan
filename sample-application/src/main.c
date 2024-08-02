@@ -64,18 +64,17 @@ int64_t ticks_fr, ticks_fl;
 struct mother_msg msg;
 
 
-// ayush's vel interpolation
-float velocity_interpolation(float val, float vel_range[])
+float velocity_interpolation(float val[], int len)
 {
-	return (val/100)*vel_range[1];
+	for (int i=0;i<sizeof(val);i++)
+		val[i]=(val[i]/100)*vel_range[1];
+	return val[];
 }
-/*
- *Yasharth SBUS function code
- *
- *
- */
-
-
+float SBUS(){
+	//sbus read using val[] also declare and initialize val
+	val[]=velocity_interpolation(val[]);
+	return val[];
+}
 void serial_cb(const struct device *dev, void *user_data)
 {
 	uint8_t c;
@@ -222,7 +221,6 @@ int main()
 	}
 
 	/* Calibrate and Configure devices */
-
 	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
 
 	if (err < 0) {
