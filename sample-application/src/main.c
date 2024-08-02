@@ -63,6 +63,19 @@ static uint8_t tx_buf[UART_MSG_SIZE];
 int64_t ticks_fr, ticks_fl;
 struct mother_msg msg;
 
+
+// ayush's vel interpolation
+float velocity_interpolation(float val, float vel_range[])
+{
+	return (val/100)*vel_range[1];
+}
+/*
+ *Yasharth SBUS function code
+ *
+ *
+ */
+
+
 void serial_cb(const struct device *dev, void *user_data)
 {
 	uint8_t c;
@@ -118,7 +131,6 @@ void send_to_uart(uint8_t *buf, uint8_t len)
 	}
 }
 
- */
 
 int feedback_callback(float *feedback_buffer, int buffer_len, int wheels_per_side)
 {
@@ -180,14 +192,6 @@ int main()
 		.right_wheel_radius_multiplier = 1,
 		.update_type = POSITION_FEEDBACK,
 	};
-
-	struct ArmJointStatus upper_joint = {.desired_angle = -45,
-					     .pid.Kp = 2.5,
-					     .pid.Ki = 0.25,
-					     .pid.Kd = 2,
-					     .pid.previous_error = 0,
-					     .pid.derivative = 0,
-					     .pid.integral = 0};
 
 	uint64_t time_last_drive_update = 0;
 	uint64_t drive_timestamp = 0;
@@ -254,7 +258,6 @@ int main()
 			struct DiffDriveStatus ds = diffdrive_status(drive);
 			struct mother_status_msg s_msg = {
 				.odom = ds,
-				.arm_joint_status = {0.0f, lower_joint.angle, upper_joint.angle},
 				.timestamp = k_uptime_get()};
 			struct mother_msg status_msg = {.type = T_MOTHER_STATUS, .status = s_msg};
 			uint32_t crc = crc32_ieee((uint8_t *)&status_msg,
@@ -263,10 +266,6 @@ int main()
 
 			serialize(tx_buf, (uint8_t *)&status_msg, sizeof(struct mother_msg));
 			send_to_uart(tx_buf, UART_MSG_SIZE);
-
-			if (err < 0) {
-				log_uart(T_MOTHER_ERROR, "Sample fetch/get failed in IMU");
-			}
 
 			curr_status_stamp = k_uptime_get();
 		}
