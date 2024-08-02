@@ -36,9 +36,6 @@ struct pwm_motor motor[13] = {DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SET
 const struct device *const encoder_fr = DEVICE_DT_GET(DT_ALIAS(en_fr));
 const struct device *const encoder_fl = DEVICE_DT_GET(DT_ALIAS(en_fl));
 
-/* DT spec for imus */
-const struct device *const lj_imu = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
-const struct device *const uj_imu = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
 /* DT spec for LED */
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
@@ -121,42 +118,6 @@ void send_to_uart(uint8_t *buf, uint8_t len)
 	}
 }
 
-/* Sends log to mother-uart */
-void log_uart(enum MotherMsgType type, const char *fmt, ...)
-{
-
-	va_list args;
-	va_start(args, fmt);
-
-	struct mother_msg log;
-	log.type = type;
-	vsprintf(log.info, fmt, args);
-	va_end(args);
-	log.crc = crc32_ieee((uint8_t *)&log, sizeof(struct mother_msg) - sizeof(uint32_t));
-	serialize(tx_buf, (uint8_t *)&log, sizeof(struct mother_msg));
-	send_to_uart(tx_buf, UART_MSG_SIZE);
-}
-
-/*
- * Validates against crc
- * Returns 1 on success
- */
-int valid_crc(struct mother_msg *msg)
-{
-	uint32_t rcd_crc = msg->crc;
-	uint32_t comp_crc =
-		crc32_ieee((uint8_t *)msg, sizeof(struct mother_msg) - sizeof(uint32_t));
-
-	if (rcd_crc != comp_crc) {
-		return 0;
-	}
-
-	return 1;
-}
-
-/*
- * Position feedback callback function
- * Returns 0 on success
  */
 
 int feedback_callback(float *feedback_buffer, int buffer_len, int wheels_per_side)
@@ -227,13 +188,6 @@ int main()
 					     .pid.previous_error = 0,
 					     .pid.derivative = 0,
 					     .pid.integral = 0};
-	struct ArmJointStatus lower_joint = {.desired_angle = 40,
-					     .pid.Kp = 1.8,
-					     .pid.Ki = 0.15,
-					     .pid.Kd = 0.4,
-					     .pid.previous_error = 0,
-					     .pid.derivative = 0,
-					     .pid.integral = 0};
 
 	uint64_t time_last_drive_update = 0;
 	uint64_t drive_timestamp = 0;
@@ -258,13 +212,6 @@ int main()
 		log_uart(T_MOTHER_ERROR, "Encoder Front Right not ready");
 	}
 
-	// if (!device_is_ready(lj_imu)) {
-	// 	log_uart(T_MOTHER_ERROR, "IMU Lower Joint not ready");
-	// }
-
-	// if (!device_is_ready(uj_imu)) {
-	// 	log_uart(T_MOTHER_ERROR, "IMU Upper Joint not ready");
-	// }
 
 	if (!gpio_is_ready_dt(&led)) {
 		log_uart(T_MOTHER_ERROR, "Led not ready");
@@ -292,16 +239,6 @@ int main()
 		}
 	}
 
-	// err = calibrate_imu(lj_imu, &lower_joint);
-	// if (err < 0) {
-	// 	log_uart(T_MOTHER_ERROR, "Lower Joint IMU calibration failed");
-	// }
-
-	// err = calibrate_imu(uj_imu, &upper_joint);
-	// if(err < 0) {
-	// 	log_uart(T_MOTHER_ERROR, "Upper Joint IMU calibration failed");
-	// }
-
 	if (gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE) < 0) {
 		log_uart(T_MOTHER_ERROR, "Led not configured");
 	}
@@ -313,29 +250,6 @@ int main()
 
 	while (true) {
 
-		// err = update_pid(lj_imu, &lower_joint);
-		// if ( (lower_joint.angle < 9 && lower_joint.pid.pid_change < 0) ||
-		// (lower_joint.angle> 45 && lower_joint.pid.pid_change > 0)) {
-		// 	pwm_motor_write(&(motor[6]),PWM_MOTOR_STOP);
-		// }
-		// else if (err == 0) {
-		// 	pwm_motor_write(&(motor[6]), pid_pwm_interp(lower_joint.pid.pid_change,
-		// angle_range, pid_pwm_range));
-		// }
-
-		// err += update_pid(uj_imu, &upper_joint);
-		// float transform_upper_lower = 180 - lower_joint.angle + upper_joint.angle;
-		// if ((transform_upper_lower< 85 && upper_joint.pid.pid_change < 0) ||
-		// (transform_upper_lower > 105 && upper_joint.pid.pid_change > 0)) {
-		// 	pwm_motor_write(&(motor[7]),PWM_MOTOR_STOP);
-		// }
-		// else if (err == 0) {
-		// 	pwm_motor_write(&(motor[7]), pid_pwm_interp(upper_joint.pid.pid_change,
-		// angle_range, pid_pwm_range));
-		// 	// log_uart(T_MOTHER_INFO, "PWM [%u] to motor 7",
-		// pid_pwm_interp(upper_joint.pid.pid_change, angle_range, pid_pwm_range));
-		// }
-		/* Send status every 1 ms*/
 		if (k_uptime_get() - curr_status_stamp > 10) {
 			struct DiffDriveStatus ds = diffdrive_status(drive);
 			struct mother_status_msg s_msg = {
@@ -394,11 +308,6 @@ int main()
 			if (err) {
 				log_uart(T_MOTHER_ERROR, "Diffdrive Update Failue");
 			}
-			break;
-		
-		case T_MOTHER_CMD_ARM:
-			lower_joint.desired_angle = msg.cmd.arm_joint[1];
-			upper_joint.desired_angle = msg.cmd.arm_joint[2];
 			break;
 		
 		case T_MOTHER_CMD_LA:
