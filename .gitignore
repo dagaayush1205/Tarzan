@@ -1,1 +1,4 @@
 tests/a.out*
+sample-application/src/.main.c.swp
+tests/.drive_test.c.swp
+
