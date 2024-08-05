@@ -1,0 +1,27 @@
+import serial
+import time 
+
+sbus = serial.Serial('/dev/ttyUSB0') 
+sbus.baudrate = 38400  
+sbus.timeout = 2  # set read timeout
+
+#print sbus  
+print (sbus.is_open)  # True for opened
+
+if sbus.is_open:
+    
+    while True:
+
+        size = sbus.inWaiting()
+        if size:
+            data = sbus.read(size)
+            print(data,'\n')
+        else:
+            print('no data')
+        time.sleep(1)
+else:
+    print('sbus not open')
+
+sbus.close() 
+
+
