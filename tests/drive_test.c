@@ -9,18 +9,21 @@ float angle_range[] = {-270, 270};
 float *velocity_interpolation(float val[],int len)
 {
 	for(int i=0;i<len;i++)
-		val[i]=(val[i]/100)*vel_range[1];
+	{
+		val[i]-=1024;
+		val[i]=(val[i]/1024)*vel_range[1];
+	}
 	return val;
 }
 float *SBUS(){
 	//sbus read using val[] also declare and initialize val
-	static float val[10]={0,1,2,3,4,5,6,7,8,9};      
-       	float *ptr = velocity_interpolation(val,10);
+	static float val[14]={1024,0,452,4,122,5,6,7,8,9,345,643,234,100};      
+       	float *ptr = velocity_interpolation(val,14);
 	return val;
 }
 int main(){
 	float *val=SBUS();
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < 14; i++) {
         printf("%f ", *val);
 	val++;
 	}
