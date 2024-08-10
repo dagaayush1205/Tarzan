@@ -20,8 +20,11 @@
 K_MSGQ_DEFINE(uart_msgq, sizeof(struct mother_msg), 10, 1);
 
 /* DT spec for uart */
-static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(usart1));
+static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart));
 uint8_t c;
+static uint8_t rx_buf[UART_MSG_SIZE];
+static int rx_buf_pos;
+static uint8_t tx_buf[UART_MSG_SIZE];
 void serial_cb(const struct device *dev, void *user_data)
 {
 	if (!uart_irq_update(uart_dev)) {
