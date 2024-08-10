@@ -8,6 +8,9 @@ sbus.timeout = 2  # set read timeout
 #print sbus  
 print (sbus.is_open)  # True for opened
 
+#file to write to data 
+f = open("sbus_data", "a")
+
 if sbus.is_open:
     
     while True:
@@ -16,6 +19,8 @@ if sbus.is_open:
         if size:
             data = sbus.read(size)
             print(data,'\n')
+            f.write(str(data))
+
         else:
             print('no data')
         time.sleep(1)
