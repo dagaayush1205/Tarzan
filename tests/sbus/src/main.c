@@ -19,12 +19,35 @@
 /* queue to store uart messages */
 K_MSGQ_DEFINE(uart_msgq, sizeof(struct mother_msg), 10, 1);
 
+
 /* DT spec for uart */
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart));
 uint8_t c;
 static uint8_t rx_buf[UART_MSG_SIZE];
 static int rx_buf_pos;
 static uint8_t tx_buf[UART_MSG_SIZE];
+
+void send_to_uart(uint8_t *buf, uint8_t len)
+{
+        for (int i = 0; i < len; i++) {
+                uart_poll_out(uart_dev, buf[i]);
+        }
+}
+
+void log_uart(enum MotherMsgType type, const char *fmt, ...)
+{
+
+        va_list args;
+        va_start(args, fmt);
+
+        struct mother_msg log;
+        log.type = type;
+        vsprintf(log.info, fmt, args);
+        va_end(args);
+//        log.crc = crc32_ieee((uint8_t *)&log, sizeof(struct mother_msg) - sizeof(uint32_t));
+        serialize(tx_buf, (uint8_t *)&log, sizeof(struct mother_msg));
+        send_to_uart(tx_buf, UART_MSG_SIZE);
+}
 void serial_cb(const struct device *dev, void *user_data)
 {
 	if (!uart_irq_update(uart_dev)) {
@@ -75,22 +98,24 @@ int main()
 	/* Device ready checks */
 
 	if (!device_is_ready(uart_dev)) {
-		log_uart(T_MOTHER_ERROR, "UART device not ready");
+		printk("UART device not ready");
 	}
 
 	/* Calibrate and Configure devices */
 	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
-
-	if (err < 0) {
-		if (err == -ENOTSUP) {
-			log_uart(T_MOTHER_ERROR, "Interrupt-driven UART API support not enabled");
-		} else if (err == -ENOSYS) {
-			log_uart(T_MOTHER_ERROR,
-				 "UART device does not support interrupt-driven API");
-		} else {
-			log_uart(T_MOTHER_ERROR, "Error setting UART callback: %d", err);
+	while(true){
+	
+		if (err < 0) {
+			if (err == -ENOTSUP) {
+				printk("Interrupt-driven UART API support not enabled");
+			} else if (err == -ENOSYS) {
+				printk(
+					 "UART device does not support interrupt-driven API");
+			} else {
+				printk("Error setting UART callback: %d", err);
+			}
 		}
+		printk("Data: %d",c);
+		uart_irq_rx_enable(uart_dev);
 	}
-	log_uart(T_MOTHER_INFO, "Data: %d",c);
-	uart_irq_rx_enable(uart_dev);
 }
