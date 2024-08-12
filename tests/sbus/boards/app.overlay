@@ -1,9 +1,13 @@
 /{
 	aliases {
-			mother-uart = &usart1;
+			mother-uart = &usart2;
+	};
+ chosen {
+                zephyr,console = &usart2;
+                zephyr,shell-uart = &usart2;
 	};
 };
-&usart1 {
+&usart2 {
 	pinctrl-0 = <&usart1_tx_pb6 &usart1_rx_pb7>;
 	pinctrl-names= "default";
 	status = "okay";
