@@ -1,18 +1,20 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#define CHANNEL_SCALE(x) ((x * 1000) / 1600 + 875)
+
 // start and end byte values for s bus
-const uint16_t start = 00001111; // 0x0F
-const uint16_t end = 00000000; // 0x00
+const uint8_t start = 0x0f; // 0x0F
+const uint8_t end = 0x00; // 0x00
 
 // variable to store channel 
 uint16_t channel[16];
 
 // creating 11 bit channel
-void parse_buffer(uint16_t buff[]) { 
+void parse_buffer(uint8_t buff[]) { 
 		
 	// masking byte shiftings bits (value in hexa '0x07FF')
-	uint32_t mask = 0000011111111111;
+	uint16_t mask = 0x7ff;
 
 	// creating channels 
         channel[0]  = ((buff[1] | buff[2]<<8)                 & mask);
@@ -31,6 +33,7 @@ void parse_buffer(uint16_t buff[]) {
         channel[13] = ((buff[18]>>7| buff[19]<<1| buff[20]<<9) & mask);
         channel[14] = ((buff[20]>>2| buff[21]<<6)             & mask);
         channel[15] = ((buff[21]>>5| buff[22]<<3)             & mask);
+
 }
 
 // to check parity byte
@@ -52,7 +55,7 @@ int parity_checker(int parity)
 int main() {
 
 	// array to store sbus packet  
-	uint16_t buffer[25];
+	uint8_t buffer[25];
 
 	// flag to check parity byte
 	int flag = 0;
@@ -63,15 +66,14 @@ int main() {
 	// opening file 
 	data = fopen("sbus_data", "rb");
 
-	while(1) 
-	{
-
+//	while(1) 
+//	{
 		// taking buffer input
-		for(int i=0; i<26; i++)
-		{
-			fread(buffer, sizeof(uint16_t), 1, data);
+		fread(buffer, sizeof(uint8_t), 25, data);
 		
-		}
+		/*for(int i=0; i<26; i++) {
+			fread(buffer, sizeof(uint8_t), 1, data);
+		}*/
 
 		if (buffer[0] == start) 
 		{	
@@ -80,10 +82,16 @@ int main() {
 			if(flag == 0)
 				parse_buffer(buffer);
 
-			if (buffer[25] == end)
-				continue;
+			//if (buffer[25] == end)
+				//continue;
 		}
-	}
+
+		for(int i=0; i<16; i++)
+		{
+			channel[i] = CHANNEL_SCALE(channel[i]); 
+			printf("channel %d : %d \n",(i+1),channel[i]);
+		}
+//	}
 	
 	return 0;
 
