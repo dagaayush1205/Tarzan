@@ -6,9 +6,10 @@
 #include <string.h>
 
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart));
-#define UART_MSG_SIZE (sizeof(uint8_t)*25)
+//#define UART_MSG_SIZE (sizeof(uint8_t)*25)
 K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t)*25, 10, 1);
-struct mother_msg msg;
+//struct mother_msg msg;
+uint8_t message;
 	//void recv_str(const struct device *uart, char *str)
 	//{
 	//        char *head = str;
@@ -55,8 +56,8 @@ int main(){
 	uart_irq_rx_enable(uart_dev);
 	
 	while(true){
-
-		printk("Message: %x \n",k_msgq_get(&uart_msgq, &msg,K_FOREVER)); 
+		k_msgq_get(&uart_msgq, &message,K_MSEC(4));
+		printk("Message: %hhx \n", message); 
 //		k_sleep(K_MSEC(100));	
 		
 //		while(true)
