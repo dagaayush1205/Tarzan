@@ -1,12 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#define CHANNEL_SCALE(x) ((x * 1000) / 1600 + 875)
-
-// start and end byte values for s bus
-const uint8_t start = 0x0f; // 0x0F
-const uint8_t end = 0x00; // 0x00
-
 // variable to store channel 
 uint16_t channel[16];
 
