@@ -4,6 +4,7 @@
 #include <kyvernitis/lib/kyvernitis.h>
 #include <stdio.h>
 #include <string.h>
+#include "sbus_parse.c"
 
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart));
 //#define UART_MSG_SIZE (sizeof(uint8_t)*25)
@@ -24,6 +25,25 @@ uint8_t message;
 	//}
 	//
 	//
+uint16_t *sbus_parsing() {
+	uint8_t packet[25],packet_pos=0,start = 0x0F, end = 0x00;	
+	uint16_t ch[16];
+	if(message == start) {
+	for(packet_pos = 0; packet_pos < 25; packet_pos++) {
+		k_msgq_get(&uart_msgq, &message,K_MSEC(4));
+		packet[packet_pos] = message;
+		}
+	}
+
+	*ch = parse_buffer(packet);
+
+	if(packet[24] == end)
+		return ch;
+	
+	else 
+		return -1;
+}
+
 void serial_cb(const struct device *dev, void *user_data){
 	uint8_t c;
 	uint8_t data[25];
@@ -45,9 +65,9 @@ void serial_cb(const struct device *dev, void *user_data){
 	}
 }
 int main(){
-	//char recv_buf[64];
+	uint16_t channels[16];
 	int err;
-	printk("I am live");
+	printk("I am alive");
 	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
 	if(err<0)
 	{
@@ -56,13 +76,17 @@ int main(){
 	uart_irq_rx_enable(uart_dev);
 	
 	while(true){
-		k_msgq_get(&uart_msgq, &message,K_MSEC(4));
-		printk("Message: %hhx \n", message); 
+		*channels=sbus_parsing();
+	}
+		
+//		printk("Message: %hhx \n", message); 
 //		k_sleep(K_MSEC(100));	
 		
 //		while(true)
 //		{
 //			recv_str(uart_dev, recv_buf);
 //		}
-		}
+		
+		
+		
 }
