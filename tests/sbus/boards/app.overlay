@@ -8,8 +8,11 @@
 	};
 };
 &usart2 {
-	pinctrl-0 = <&usart1_tx_pb6 &usart1_rx_pb7>;
+	pinctrl-0 = <&usart2_tx_pd5 &usart2_rx_pd6>;
 	pinctrl-names= "default";
 	status = "okay";
-	current-speed = <115200>;
+	current-speed = <100000>;
+	parity = "even";
+	stop-bits = "2";
+	rx-invert;
 };

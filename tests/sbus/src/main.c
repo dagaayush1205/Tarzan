@@ -72,7 +72,7 @@ void serial_cb(const struct device *dev, void *user_data)
 				continue;
 			}
 			// Add deserialization guard
-			deserialize(rx_buf, (uint8_t *)&msg, sizeof(msg));
+//			deserialize(rx_buf, (uint8_t *)&msg, sizeof(msg));
 
 			/* if queue is full, message is silently dropped */
 			k_msgq_put(&uart_msgq, &msg, K_NO_WAIT);
@@ -92,7 +92,7 @@ void serial_cb(const struct device *dev, void *user_data)
 
 int main()
 {
-
+	printk("Hello");
 	int err;
 
 	/* Device ready checks */
@@ -102,22 +102,23 @@ int main()
 	}
 
 	/* Calibrate and Configure devices */
-	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
-	
-	if (err < 0) {
-		if (err == -ENOTSUP) {
-			printk("Interrupt-driven UART API support not enabled");
-		} else if (err == -ENOSYS) {
-			printk(
-				 "UART device does not support interrupt-driven API");
-		} else {
-			printk("Error setting UART callback: %d", err);
-		}
-		printk("Data: %d",c);
-		uart_irq_rx_enable(uart_dev);
-		while(true)
-		{
-			printk(k_msgq_get(&uart_msgq, &msg, K_MSEC(4)));
-		}
+//	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
+//	
+//	if (err < 0) {
+//		if (err == -ENOTSUP) {
+//			printk("Interrupt-driven UART API support not enabled");
+//		} else if (err == -ENOSYS) {
+//			printk(
+//				 "UART device does not support interrupt-driven API");
+//		} else {
+//			printk("Error setting UART callback: %d", err);
+//		}
+//	}
+//	printk("Data: %d",c);
+	uart_irq_rx_enable(uart_dev);
+	while(true)
+	{
+//		printk(k_msgq_get(&uart_msgq, &msg, K_MSEC(4)));
+		printk(uart_fifo_read(uart_dev, &c, 1))
 	}
 }
