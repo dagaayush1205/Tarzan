@@ -90,17 +90,20 @@ int main(){
 	
 	while(true){
 		*channels=sbus_parsing();
-	//	for(i=0;i<16;i++)
-	//	{
-	//		channels[i]=velocity_interpolation(channels[i]);
-	//		printk("channel: \n%d",channels[i]);
+		 if(channels == -1)
+			 continue; 
+		 else {
+			 for(i=0;i<16;i++)
+			 {
+				 channels[i]=velocity_interpolation(channels[i]);
+				 printk("channel: \n%d",channels[i]);
+			 }
+		 }
 
-	//	}
+//		printk("Message: %hhx \n", message); 
+//		k_sleep(K_MSEC(100));	
 		
-		printk("Message: %hhx \n", message); 
-		k_sleep(K_MSEC(100));	
-		
-		while(true)
+//		while(true)
 //		{
 //			recv_str(uart_dev, recv_buf);
 //		}
