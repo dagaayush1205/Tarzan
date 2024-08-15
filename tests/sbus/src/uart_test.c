@@ -70,19 +70,16 @@ void serial_cb(const struct device *dev, void *user_data){
 //	printk("print c:%hhx\n",c);
 	}
 }
-uint16_t *velocity_interpolation(uint16_t val[],int len)
+uint16_t velocity_interpolation(uint16_t val)
 {
-        for(int i=0;i<len;i++)
-        {
-                val[i]-=1024;
-                val[i]=(val[i]/1024)*vel_range[1];
-        }
+	val-=1024;
+	val=(val/1024)*vel_range[1];
         return val;
 }
 
 int main(){
 	uint16_t channels[16];
-	int err;
+	int err,i;
 	printk("I am alive");
 	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
 	if(err<0)
@@ -92,21 +89,24 @@ int main(){
 	uart_irq_rx_enable(uart_dev);
 	
 	while(true){
-		*channels=velocity_interpolation(sbus_parsing(),16);
-		for (int i = 0; i < 14; i++) {
-		        printk("%d ", channels[i]);
-        	}
+		*channels=sbus_parsing();
+	//	for(i=0;i<16;i++)
+	//	{
+	//		channels[i]=velocity_interpolation(channels[i]);
+	//		printk("channel: \n%d",channels[i]);
 
-	}
+	//	}
 		
-//		printk("Message: %hhx \n", message); 
-//		k_sleep(K_MSEC(100));	
+		printk("Message: %hhx \n", message); 
+		k_sleep(K_MSEC(100));	
 		
-//		while(true)
+		while(true)
 //		{
 //			recv_str(uart_dev, recv_buf);
 //		}
 		
 		
 		
+	}
 }
+
