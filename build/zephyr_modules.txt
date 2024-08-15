@@ -1,5 +1,0 @@
-"Kyvernitis":"/home/ayushd/R2-D2_workspace/modules/lib/kyvernitis":"/home/ayushd/R2-D2_workspace/modules/lib/kyvernitis/zephyr"
-"cmsis":"/home/ayushd/R2-D2_workspace/modules/hal/cmsis":"${ZEPHYR_CMSIS_CMAKE_DIR}"
-"stm32":"/home/ayushd/R2-D2_workspace/modules/hal/stm32":"/home/ayushd/R2-D2_workspace/modules/hal/stm32"
-"canard":"/home/ayushd/R2-D2_workspace/modules/lib/canard":"/home/ayushd/R2-D2_workspace/modules/lib/canard/zephyr"
-"CANscribe":"/home/ayushd/R2-D2_workspace/modules/lib/canscribe":"/home/ayushd/R2-D2_workspace/modules/lib/canscribe/zephyr"
