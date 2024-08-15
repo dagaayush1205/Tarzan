@@ -11,6 +11,12 @@ static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)
 K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t)*25, 10, 1);
 //struct mother_msg msg;
 uint8_t message;
+float vel_range[] = {-10, 10};
+//uint32_t pwm_range[] = {1120000, 1880000};
+float la_speed_range[] = {-127.0, 127.0};
+//uint32_t pid_pwm_range[] = {1300000, 1700000};
+float angle_range[] = {-270, 270};
+
 	//void recv_str(const struct device *uart, char *str)
 	//{
 	//        char *head = str;
@@ -64,6 +70,16 @@ void serial_cb(const struct device *dev, void *user_data){
 //	printk("print c:%hhx\n",c);
 	}
 }
+uint16_t *velocity_interpolation(uint16_t val[],int len)
+{
+        for(int i=0;i<len;i++)
+        {
+                val[i]-=1024;
+                val[i]=(val[i]/1024)*vel_range[1];
+        }
+        return val;
+}
+
 int main(){
 	uint16_t channels[16];
 	int err;
@@ -76,7 +92,11 @@ int main(){
 	uart_irq_rx_enable(uart_dev);
 	
 	while(true){
-		*channels=sbus_parsing();
+		*channels=velocity_interpolation(sbus_parsing(),16);
+		for (int i = 0; i < 14; i++) {
+		        printk("%d ", channels[i]);
+        	}
+
 	}
 		
 //		printk("Message: %hhx \n", message); 
