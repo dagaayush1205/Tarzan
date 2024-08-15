@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#define CHANNEL_SCALE(x) ((x * 1000) / 1600 + 875)
+
 // variable to store channel 
 uint16_t channel[16];
 
@@ -27,6 +29,12 @@ uint16_t *parse_buffer(uint8_t buff[]) {
         channel[13] = ((buff[18]>>7| buff[19]<<1| buff[20]<<9) & mask);
         channel[14] = ((buff[20]>>2| buff[21]<<6)             & mask);
         channel[15] = ((buff[21]>>5| buff[22]<<3)             & mask);
+
+	// linear interpolation
+	for(int i=0;I,16;i++)
+	{
+		channel[i] = CHANNEL_SCALE(channel[i]);
+	}
 	return channel;
 }
 
