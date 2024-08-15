@@ -15,7 +15,7 @@ float *velocity_interpolation(float val[],int len)
 	}
 	return val;
 }
-float *SBUS(){
+float *SBUS(uint16_t channels[]){
 	//sbus read using val[] also declare and initialize val
 	static float val[14]={1024,0,452,4,122,5,6,7,8,9,345,643,234,100};      
        	float *ptr = velocity_interpolation(val,14);
