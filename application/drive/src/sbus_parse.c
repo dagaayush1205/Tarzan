@@ -31,7 +31,7 @@ uint16_t *parse_buffer(uint8_t buff[]) {
         channel[15] = ((buff[21]>>5| buff[22]<<3)             & mask);
 
 	// linear interpolation
-	for(int i=0;I,16;i++)
+	for(int i=0;i<16;i++)
 	{
 		channel[i] = CHANNEL_SCALE(channel[i]);
 	}
