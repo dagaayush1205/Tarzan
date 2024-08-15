@@ -5,4 +5,5 @@ tests/.drive_test.c.swp
 tests/build/
 tests/sbus/build
 tests/sbus/src/.main.c.swp
+build/
 
