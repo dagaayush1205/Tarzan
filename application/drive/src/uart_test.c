@@ -7,6 +7,7 @@
 #include "sbus_parse.c"
 
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart));
+static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart));
 //#define UART_MSG_SIZE (sizeof(uint8_t)*25)
 K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t)*25, 10, 1);
 //struct mother_msg msg;
@@ -96,7 +97,7 @@ int main(){
 			 for(i=0;i<16;i++)
 			 {
 				 channels[i]=velocity_interpolation(channels[i]);
-				 printk("channel: \n%d",channels[i]);
+				 printk("channel: %d\n",channels[i]);
 			 }
 		 }
 

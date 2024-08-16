@@ -6,8 +6,9 @@
 #include <string.h>
 
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart));
+static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart));
 //#define UART_MSG_SIZE (sizeof(uint8_t)*25)
-K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t)*25, 10, 1);
+K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t)*200, 10, 1);
 //struct mother_msg msg;
 uint8_t message;
 	//void recv_str(const struct device *uart, char *str)
@@ -42,7 +43,7 @@ void serial_cb(const struct device *dev, void *user_data){
 }
 int main(){
 	int err;
-	printk("I am live");
+	printk("I am alive");
 	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
 	if(err<0)
 	{
@@ -52,8 +53,13 @@ int main(){
 	
 	while(true){
 		k_msgq_get(&uart_msgq, &message,K_MSEC(4));
-		for(int i=0;i<25;i++)
-			printk("Message[%d]: %hhx \n", i,message);
-	       printk("\n");	
+//		if(message==0x0f){
+			for(int i=0;i<25;i++)
+			{	
+				printk("%02x ", message);
+				k_msgq_get(&uart_msgq, &message,K_MSEC(4));
+			}
+			printk("\n");
+//		}
 	}
 }

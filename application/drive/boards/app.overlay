@@ -1,18 +1,24 @@
 /{
 	aliases {
-			mother-uart = &usart2;
+			debug-uart = &usart2;
+			mother-uart = &usart1;
 	};
  chosen {
                 zephyr,console = &usart2;
                 zephyr,shell-uart = &usart2;
 	};
 };
-&usart2 {
-	pinctrl-0 = <&usart2_tx_pd5 &usart2_rx_pd6>;
+&usart1 {
+	pinctrl-0 = <&usart1_tx_pb6 &usart1_rx_pb7>;
 	pinctrl-names= "default";
 	status = "okay";
 	current-speed = <100000>;
 	parity = "even";
-	stop-bits = "2";
-	rx-invert;
+	stop-bits = "1";
+};
+&usart2 {
+        pinctrl-0 = <&usart2_tx_pd5 &usart2_rx_pd6>;
+        pinctrl-names= "default";
+        status = "okay";
+        current-speed = <115200>;
 };
