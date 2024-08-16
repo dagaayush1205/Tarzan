@@ -14,7 +14,7 @@
 	status = "okay";
 	current-speed = <100000>;
 	parity = "even";
-	stop-bits = "1";
+	stop-bits = "2";
 };
 &usart2 {
         pinctrl-0 = <&usart2_tx_pd5 &usart2_rx_pd6>;
