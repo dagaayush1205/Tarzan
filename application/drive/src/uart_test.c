@@ -55,7 +55,7 @@ void serial_cb(const struct device *dev, void *user_data){
         k_msgq_put(&uart_msgq, &c, K_NO_WAIT);
 	}
 }
-uint16_t sbus_velocity_interpolation(uint16_t channel_input,float *velocity_range)
+float sbus_velocity_interpolation(uint16_t channel_input,float *velocity_range)
 {
 	if (channel_input > channel_range[1]) {
 		return velocity_range[1];
@@ -68,13 +68,12 @@ uint16_t sbus_velocity_interpolation(uint16_t channel_input,float *velocity_rang
 	if (channel_input < 1005 && channel_input > 995) {
 		return (velocity_range[0] + velocity_range[1]) / 2;
 	}
-
+	else{
 	float dchannel = channel_range[1] - channel_range[0];
 	float dvel = velocity_range[1] - velocity_range[0];
 
-	uint32_t vel_interp = velocity_range[0] + (dvel / dchannel) * (channel_input - channel_range[0]);
-
-	return vel_interp;
+	float  vel_interp = velocity_range[0] + (dvel / dchannel) * (channel_input - channel_range[0]);
+	return vel_interp;}
 }
 
 int main(){
@@ -94,12 +93,12 @@ int main(){
 		 else {
 			 for(i=0;i<16;i++)
 			 {
-				 if(i==0)
-					printk("%d: %0.2f \t",i, sbus_velocity_interpolation(ch[i],linear_velocity_range));
-				 if(i==1)
-					printk("%d: %0.2f \t",i, sbus_velocity_interpolation(ch[i],angular_velocity_range));
-				 else
-				 	printk("%d: %d \t",i,ch[i]);
+				 if(i==2)
+					printk("%d: %d \t %0.2f \t",i,ch[i], sbus_velocity_interpolation(ch[i],linear_velocity_range));
+				  if(i==0)
+					printk("%d: %d \t %0.2f \t",i,ch[i], sbus_velocity_interpolation(ch[i],angular_velocity_range));
+		//		 else
+		//		 	printk("%d: %d \t",i,ch[i]);
 			 }
 			 printk("\n");
 		 }
