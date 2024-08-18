@@ -71,8 +71,6 @@ int sbus_parsing() {
 void serial_cb(const struct device *dev, void *user_data)
 {
 	uint8_t c;
-	uint8_t data[25];
-	int buf_pos=0;
 	
 	if (!uart_irq_update(uart_dev)) 
 	{
