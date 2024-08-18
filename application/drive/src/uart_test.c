@@ -13,8 +13,8 @@ static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)
 static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart));
 
 /* DT spec for encoders */
-const struct device *const encoder_fr = DEVICE_DT_GET(DT_ALIAS(en_fr));
-const struct device *const encoder_fl = DEVICE_DT_GET(DT_ALIAS(en_fl));
+// const struct device *const encoder_fr = DEVICE_DT_GET(DT_ALIAS(en_fr));
+// const struct device *const encoder_fl = DEVICE_DT_GET(DT_ALIAS(en_fl));
 
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id)                                                                \
@@ -80,11 +80,10 @@ void serial_cb(const struct device *dev, void *user_data)
 		return;
 	}
 
-	if (!uart_irq_rx_ready(uart_dev)) 
-	{
+	if (!uart_irq_rx_ready(uart_dev)) {
 		return;
 	}
-	
+
 	while (uart_fifo_read(uart_dev, &c, 1) == 1) 
 	{
         	k_msgq_put(&uart_msgq, &c, K_NO_WAIT);
@@ -117,20 +116,6 @@ float sbus_velocity_interpolation(uint16_t channel_input,float *velocity_range)
 
 int feedback_callback(float *feedback_buffer, int buffer_len, int wheels_per_side)
 {
-	struct sensor_value fr_val, fl_val;
-	get_encoder_ticks(&ticks_fr, encoder_fr, &fr_val);
-	get_encoder_ticks(&ticks_fl, encoder_fl, &fl_val);
-
-	if (buffer_len < wheels_per_side * 2)
-	{
-		return 1;
-	}
-
-	for (int i = 0; i < wheels_per_side; i++)
-	{
-		feedback_buffer[i] = (float)ticks_fl / 4706 * 2 * 3.141592f;
-		feedback_buffer[wheels_per_side + i] = (float)ticks_fr / 4706 * 2 * 3.141592f;
-	}
 	return 0;
 }
 
@@ -156,7 +141,6 @@ int velocity_callback(const float *velocity_buffer, int buffer_len, int wheels_p
 }
 int main(){
 	int err,i,flag=0;
-
 	uint64_t drive_timestamp = 0;
 	uint64_t time_last_drive_update = 0;
 
@@ -213,7 +197,8 @@ int main(){
 		flag=sbus_parsing();
 		if(flag == 0)
 		{
-			 continue;
+			//printk("\nError:Could not find start bit"); 
+			continue;
 		}
 		 else 
 		 {
@@ -222,15 +207,15 @@ int main(){
 				 if(i == 2)
 				 {
 					cmd.linear_x = sbus_velocity_interpolation(ch[i],linear_velocity_range);
-					printk("%d: %d \t %0.2f \t",i,ch[i],cmd.linear_x);
+					printk("%d: %d    %0.2f   ",i,ch[i],cmd.linear_x);
 				 }
 				if(i == 0)
 				{
 					cmd.angular_z = sbus_velocity_interpolation(ch[i],angular_velocity_range);
-					printk("%d: %d \t %0.2f \t",i,ch[i], cmd.angular_z);
+					printk("%d: %d    %0.2f   ",i,ch[i], cmd.angular_z);
 				}
-			 printk("\n");
 		 	}
+			printk("\n");
 		 }
 
 		drive_timestamp = k_uptime_get();

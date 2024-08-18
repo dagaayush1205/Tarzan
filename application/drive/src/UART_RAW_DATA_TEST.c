@@ -8,7 +8,7 @@
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart));
 static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart));
 //#define UART_MSG_SIZE (sizeof(uint8_t)*25)
-K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t)*200, 10, 1);
+K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t), 100, 1);
 //struct mother_msg msg;
 uint8_t message;
 	//void recv_str(const struct device *uart, char *str)
@@ -27,7 +27,6 @@ uint8_t message;
 	//
 void serial_cb(const struct device *dev, void *user_data){
 	uint8_t c;
-	uint8_t data[25];
 	int buf_pos=0;
 	if (!uart_irq_update(uart_dev)) {
 		return;
@@ -37,17 +36,21 @@ void serial_cb(const struct device *dev, void *user_data){
 		return;
 	}
 	while (uart_fifo_read(uart_dev, &c, 1) == 1) {
-        	k_msgq_put(&uart_msgq, &c, K_NO_WAIT);
+        	k_msgq_put(&uart_msgq, &c, K_MSEC(4));
 	//	printk("print c:%hhx\n",c);
 	}
 }
 int main(){
 	int err;
 	printk("I am alive");
+	if (!device_is_ready(uart_dev)) 
+	{
+		printk( "UART device not ready");
+	}
 	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
 	if(err<0)
 	{
-		printk("Error");
+		printk("Error setting irq on uart_dev\n");
 	}
 	uart_irq_rx_enable(uart_dev);
 	
