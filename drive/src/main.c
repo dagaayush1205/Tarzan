@@ -216,7 +216,7 @@ int main(){
 		 {
 			 for(i = 0 ; i < 16 ; i++)
 			 {
-				 if(i == 2)
+				 if(i == 1)
 				 {
 					cmd.linear_x = sbus_velocity_interpolation(ch[i],linear_velocity_range);
 					printk("%d: %d    %0.2f   ",i,ch[i],cmd.linear_x);
