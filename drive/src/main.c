@@ -83,7 +83,7 @@ void serial_cb(const struct device *dev, void *user_data)
 
 	while (uart_fifo_read(uart_dev, &c, 1) == 1) 
 	{
-		k_msgq_put(&uart_msgq, &c, K_NO_WAIT);
+		k_msgq_put(&uart_msgq, &c, K_NO_WAIT); // put message from UART to queue
 	}
 }
 
@@ -164,7 +164,7 @@ int main(){
 	uint64_t drive_timestamp = 0;
 	uint64_t time_last_drive_update = 0;
 
-	struct DiffDriveConfig drive_config = {
+	struct DiffDriveConfig drive_config = { 
 		.wheel_separation = 0.77f,
 		.wheel_separation_multiplier = 1,
 		.wheel_radius = 0.15f,
@@ -174,7 +174,7 @@ int main(){
 		.right_wheel_radius_multiplier = 1,
 		.update_type = POSITION_FEEDBACK,
 	};
-
+// 	Angular and linear velocity
 	struct DiffDriveTwist cmd = {
             .angular_z = 0,
             .linear_x = 0,
@@ -192,7 +192,7 @@ int main(){
 			printk( "PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
 		}
 	}
-
+// 	Interrupt
 	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
 	
 	if(err<0)
@@ -228,6 +228,7 @@ int main(){
 	
 	while(true)
 	{
+// 		parse uart data return 1 if start bit not found
 		flag=sbus_parsing();
 		if(flag == 0)
 		{
@@ -235,34 +236,44 @@ int main(){
 		}
 		else 
 		{
-
+// 			angular velocity interpolation
 			cmd.angular_z = sbus_velocity_interpolation(ch[0],angular_velocity_range);
 			printk("%2d: %5d    %0.2f   ",1,ch[0], cmd.angular_z);
 	
+// 			linear velocity interpolation
 			cmd.linear_x = sbus_velocity_interpolation(ch[1],linear_velocity_range);
 			printk("%2d: %5d    %0.2f   ",2,ch[1],cmd.linear_x);
 				
 
-
+// 			linear actuators print
 			printk("%2d: %5d    ",3,ch[2]);
-			
 			printk("%2d: %5d    ",4,ch[3]);
 
-			printk("%2d: %5d    ",5,ch[4]);
 
+// 			arm joint print
+			printk("%2d: %5d    ",5,ch[4]);
 			printk("%2d: %5d    ",6,ch[5]);
 
+// 			turntable print
 			printk("%2d: %5d    ",7,ch[6]);
 
 			printk("\n");
 		}
 		
 		drive_timestamp = k_uptime_get();
+
+// 		drive write
 		err = diffdrive_update(drive, cmd, time_last_drive_update); 
+
+// 		linear actuators interpolate and write
 		linear_actuator_write(2,ch[2]); 			     		
 		linear_actuator_write(3,ch[3]);
+
+// 		arm joint interpolate and write		
 		linear_actuator_write(4,ch[4]);
 		linear_actuator_write(5,ch[5]);
+
+
 		time_last_drive_update = k_uptime_get() - drive_timestamp;
 	}
 }
