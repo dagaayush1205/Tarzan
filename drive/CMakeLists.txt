@@ -3,5 +3,5 @@ set(DTC_OVERLAY_FILE "boards/app.overlay")
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(R2-D2 LANGUAGES C)
 
-target_sources(app PRIVATE src/main.c)
+target_sources(app PRIVATE src/uart_channel_output.c)
 

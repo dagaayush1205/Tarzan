@@ -210,15 +210,15 @@ int main(){
 		flag=sbus_parsing();
 		if(flag == 0)
 		{
-			printk("\nError:Could not find start bit"); 
+			printk("Error:Could not find start bit\n"); 
 			continue;
 		}
 		 else 
 		 {
-			 for(i = 0 ; i < 16 ; i++)
+			 for(i = 0 ; i < 15 ; i++)
 			 {
-					cmd.linear_x = sbus_velocity_interpolation(ch[i],linear_velocity_range);
-					printk("%d: %d    %0.2f   ",i,ch[i],cmd.linear_x);
+				//	cmd.linear_x = sbus_velocity_interpolation(ch[i],linear_velocity_range);
+					printk("%d: %d \t",i,ch[i]);
 		 	}
 			printk("\n");
 		 }

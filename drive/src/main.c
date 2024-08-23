@@ -27,7 +27,6 @@ struct pwm_motor motor[13] = {DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SET
 K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t), 250, 1);
 
 //struct mother_msg msg;
-uint8_t message;
 float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[]= {-5.5,5.5};
 float wheel_velocity_range[] = {-10.0, 10.0};
@@ -47,7 +46,7 @@ struct DiffDriveTwist TIMEOUT_CMD = {
 
 
 int sbus_parsing() {
-	uint8_t packet[25],packet_pos=0,start = 0x0F, end = 0x00;
+	uint8_t packet[25],packet_pos=0,start = 0x0F, end = 0x00, message=0;
 
 	k_msgq_get(&uart_msgq, &message,K_MSEC(4));
 
@@ -84,7 +83,7 @@ void serial_cb(const struct device *dev, void *user_data)
 
 	while (uart_fifo_read(uart_dev, &c, 1) == 1) 
 	{
-        	k_msgq_put(&uart_msgq, &c, K_NO_WAIT);
+		k_msgq_put(&uart_msgq, &c, K_NO_WAIT);
 	}
 }
 
@@ -136,6 +135,29 @@ int velocity_callback(const float *velocity_buffer, int buffer_len, int wheels_p
 		return 1;
 	}
 	return 0;
+}
+
+uint32_t linear_actuator_pwm_interpolation(uint16_t linear_actuator_movement , uint32_t *pwm_range)
+{
+	if (linear_actuator_movement > 1400) 
+	{
+		return pwm_range[1];
+	}
+
+	if (linear_actuator_movement < 600) 
+	{
+		return pwm_range[0];
+	}
+	
+		return 1500000;
+
+}
+int linear_actuator_write(int i, int dir){
+	if(pwm_motor_write(&(motor[i]), linear_actuator_pwm_interpolation(dir, pwm_range)))
+	{
+		printk("Linear Actuator: Unable to write at linear actuator %d", i);
+		return 1;
+	}
 }
 int main(){
 	int err,i,flag=0;
@@ -209,29 +231,38 @@ int main(){
 		flag=sbus_parsing();
 		if(flag == 0)
 		{
-			printk("\nError:Could not find start bit"); 
 			continue;
 		}
-		 else 
-		 {
-			 for(i = 0 ; i < 16 ; i++)
-			 {
-				 if(i == 1)
-				 {
-					cmd.linear_x = sbus_velocity_interpolation(ch[i],linear_velocity_range);
-					printk("%d: %d    %0.2f   ",i,ch[i],cmd.linear_x);
-				 }
-				if(i == 0)
-				{
-					cmd.angular_z = sbus_velocity_interpolation(ch[i],angular_velocity_range);
-					printk("%d: %d    %0.2f   ",i,ch[i], cmd.angular_z);
-				}
-		 	}
-			printk("\n");
-		 }
+		else 
+		{
 
+			cmd.angular_z = sbus_velocity_interpolation(ch[0],angular_velocity_range);
+			printk("%2d: %5d    %0.2f   ",1,ch[0], cmd.angular_z);
+	
+			cmd.linear_x = sbus_velocity_interpolation(ch[1],linear_velocity_range);
+			printk("%2d: %5d    %0.2f   ",2,ch[1],cmd.linear_x);
+				
+
+
+			printk("%2d: %5d    ",3,ch[2]);
+			
+			printk("%2d: %5d    ",4,ch[3]);
+
+			printk("%2d: %5d    ",5,ch[4]);
+
+			printk("%2d: %5d    ",6,ch[5]);
+
+			printk("%2d: %5d    ",7,ch[6]);
+
+			printk("\n");
+		}
+		
 		drive_timestamp = k_uptime_get();
-		err = diffdrive_update(drive, cmd, time_last_drive_update);
+		err = diffdrive_update(drive, cmd, time_last_drive_update); 
+		linear_actuator_write(2,ch[2]); 			     		
+		linear_actuator_write(3,ch[3]);
+		linear_actuator_write(4,ch[4]);
+		linear_actuator_write(5,ch[5]);
 		time_last_drive_update = k_uptime_get() - drive_timestamp;
 	}
 }

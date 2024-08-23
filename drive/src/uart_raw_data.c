@@ -56,13 +56,13 @@ int main(){
 	
 	while(true){
 		k_msgq_get(&uart_msgq, &message,K_MSEC(4));
-//		if(message==0x0f){
+		if(message==0x0f){
 			for(int i=0;i<25;i++)
 			{	
 				printk("%02x ", message);
 				k_msgq_get(&uart_msgq, &message,K_MSEC(4));
 			}
 			printk("\n");
-//		}
+		}
 	}
 }
