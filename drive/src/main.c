@@ -3,7 +3,7 @@
 #include <kyvernitis/lib/kyvernitis.h>
 #include <stdio.h>
 #include <string.h>
-#include "sbus_parse.c"
+#include "R2-D2/lib/sbus.c"
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/sensor.h>
@@ -86,79 +86,6 @@ void serial_cb(const struct device *dev, void *user_data)
 		k_msgq_put(&uart_msgq, &c, K_NO_WAIT); // put message from UART to queue
 	}
 }
-
-float sbus_velocity_interpolation(uint16_t channel_input,float *velocity_range)
-{
-
-	if (channel_input > channel_range[1])
-	{
-		return velocity_range[1];
-	}
-
-	if (channel_input < channel_range[0])
-	{
-		return velocity_range[0];
-	}
-
-	if (channel_input < 1005 && channel_input > 995) 
-	{
-		return (velocity_range[0] + velocity_range[1]) / 2;
-	}
-	float dchannel = channel_range[1] - channel_range[0];
-	float dvel = velocity_range[1] - velocity_range[0];
-
-	float  vel_interp = velocity_range[0] + (dvel / dchannel) * (channel_input - channel_range[0]);
-	return vel_interp;
-}
-
-int feedback_callback(float *feedback_buffer, int buffer_len, int wheels_per_side)
-{
-	return 0;
-}
-
-int velocity_callback(const float *velocity_buffer, int buffer_len, int wheels_per_side)
-{
-	if (buffer_len < wheels_per_side * 2) 
-	{
-		return 1;
-	}
-
-	const int i = 0;
-	if (pwm_motor_write(&(motor[i]), velocity_pwm_interpolation(*(velocity_buffer + i), wheel_velocity_range, pwm_range))) 
-	{
-		printk("Drive: Unable to write pwm pulse to Left : %d", i);
-		return 1;
-	}
-	if (pwm_motor_write(&(motor[i + 1]), velocity_pwm_interpolation(*(velocity_buffer + wheels_per_side + i), wheel_velocity_range, pwm_range))) 
-	{
-		printk("Drive: Unable to write pwm pulse to Right : %d", i);
-		return 1;
-	}
-	return 0;
-}
-
-uint32_t linear_actuator_pwm_interpolation(uint16_t linear_actuator_movement , uint32_t *pwm_range)
-{
-	if (linear_actuator_movement > 1400) 
-	{
-		return pwm_range[1];
-	}
-
-	if (linear_actuator_movement < 600) 
-	{
-		return pwm_range[0];
-	}
-	
-		return 1500000;
-
-}
-int linear_actuator_write(int i, int dir){
-	if(pwm_motor_write(&(motor[i]), linear_actuator_pwm_interpolation(dir, pwm_range)))
-	{
-		printk("Linear Actuator: Unable to write at linear actuator %d", i);
-		return 1;
-	}
-}
 int main(){
 	int err,i,flag=0;
 	uint64_t drive_timestamp = 0;
@@ -238,26 +165,26 @@ int main(){
 		{
 // 			angular velocity interpolation
 			cmd.angular_z = sbus_velocity_interpolation(ch[0],angular_velocity_range);
-			printk("%2d: %5d    %0.2f   ",1,ch[0], cmd.angular_z);
+//			printk("%2d: %5d    %0.2f   ",1,ch[0], cmd.angular_z);
 	
 // 			linear velocity interpolation
 			cmd.linear_x = sbus_velocity_interpolation(ch[1],linear_velocity_range);
-			printk("%2d: %5d    %0.2f   ",2,ch[1],cmd.linear_x);
+//			printk("%2d: %5d    %0.2f   ",2,ch[1],cmd.linear_x);
 				
 
 // 			linear actuators print
-			printk("%2d: %5d    ",3,ch[2]);
-			printk("%2d: %5d    ",4,ch[3]);
-
-
+//			printk("%2d: %5d    ",3,ch[2]);
+//			printk("%2d: %5d    ",4,ch[3]);
+//
+//
 // 			arm joint print
-			printk("%2d: %5d    ",5,ch[4]);
-			printk("%2d: %5d    ",6,ch[5]);
-
-// 			turntable print
-			printk("%2d: %5d    ",7,ch[6]);
-
-			printk("\n");
+//			printk("%2d: %5d    ",5,ch[4]);
+//			printk("%2d: %5d    ",6,ch[5]);
+//
+//			turntable print
+//			printk("%2d: %5d    ",7,ch[6]);
+//
+//			printk("\n");
 		}
 		
 		drive_timestamp = k_uptime_get();
