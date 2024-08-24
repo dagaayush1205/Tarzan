@@ -1,0 +1,4 @@
+config R2-D2
+	bool "Enable R2-D2"
+	help
+	  This option enables R2-D2 as a Zephyr module.
