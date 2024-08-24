@@ -1,13 +1,17 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
-#include <kyvernitis/lib/kyvernitis.h>
-#include <stdio.h>
-#include <string.h>
-#include "R2-D2/lib/sbus.c"
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/uart.h>
+
+#include <kyvernitis/lib/kyvernitis.h>
+
+#include <R2-D2/lib/sbus.h>
+#include <R2-D2/lib/drive.h>
+
+#include <stdio.h>
+
 
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
 static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart)); //debugger
@@ -24,6 +28,7 @@ static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart
 
 struct pwm_motor motor[13] = {DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
 
+// creating mssg queue to store data
 K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t), 250, 1);
 
 //struct mother_msg msg;
@@ -34,7 +39,6 @@ uint32_t pwm_range[] = {1120000, 1880000};
 float la_speed_range[] = {-127.0, 127.0};
 float angle_range[] = {-270, 270};
 uint16_t channel_range[]={0,2047};
-uint16_t* ch;
 
 /* Global ticks for encoders */
 //int64_t ticks_fr, ticks_fl;
@@ -43,29 +47,6 @@ struct DiffDriveTwist TIMEOUT_CMD = {
 	.angular_z = 0,
 	.linear_x = 0,
 };
-
-
-int sbus_parsing() {
-	uint8_t packet[25],packet_pos=0,start = 0x0F, end = 0x00, message=0;
-
-	k_msgq_get(&uart_msgq, &message,K_MSEC(4));
-
-	if(message == start) 
-	{
-		for(packet_pos = 0; packet_pos < 25; packet_pos++) 
-		{
-			packet[packet_pos] = message;
-			k_msgq_get(&uart_msgq, &message,K_MSEC(4));
-		}
-		// check if the last byte was 0x00
-		ch = parse_buffer(packet);
-		return 1;
-	} 
-	else 
-	{
-		return 0;
-	}
-}
 
 void serial_cb(const struct device *dev, void *user_data)
 {
@@ -86,7 +67,9 @@ void serial_cb(const struct device *dev, void *user_data)
 		k_msgq_put(&uart_msgq, &c, K_NO_WAIT); // put message from UART to queue
 	}
 }
+
 int main(){
+
 	int err,i,flag=0;
 	uint64_t drive_timestamp = 0;
 	uint64_t time_last_drive_update = 0;
@@ -101,12 +84,14 @@ int main(){
 		.right_wheel_radius_multiplier = 1,
 		.update_type = POSITION_FEEDBACK,
 	};
-// 	Angular and linear velocity
+
+	// Angular and linear velocity
 	struct DiffDriveTwist cmd = {
             .angular_z = 0,
             .linear_x = 0,
 	};
 
+	// device ready chceks
 	if (!device_is_ready(uart_dev)) 
 	{
 		printk( "UART device not ready");
@@ -119,7 +104,8 @@ int main(){
 			printk( "PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
 		}
 	}
-// 	Interrupt
+
+	// Interrupt to get sbus data
 	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
 	
 	if(err<0)
@@ -138,7 +124,7 @@ int main(){
 		}
 	}
 
-
+	// enable uart device for communication
 	uart_irq_rx_enable(uart_dev);
 	
 	struct DiffDrive *drive = diffdrive_init(&drive_config, feedback_callback, velocity_callback);	
@@ -199,7 +185,6 @@ int main(){
 // 		arm joint interpolate and write		
 		linear_actuator_write(4,ch[4]);
 		linear_actuator_write(5,ch[5]);
-
 
 		time_last_drive_update = k_uptime_get() - drive_timestamp;
 	}
