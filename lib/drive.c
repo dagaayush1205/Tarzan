@@ -1,14 +1,5 @@
-#include <zephyr/drivers/uart.h>
-#include <zephyr/kernel.h>
-#include <zephyr/device.h>
 #include <kyvernitis/lib/kyvernitis.h>
-#include <stdio.h>
-#include <string.h>
-#include "R2-D2/"
-#include <zephyr/devicetree.h>
-#include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/sensor.h>
-#include <zephyr/drivers/uart.h>
+#include <R2-D2/lib/drive.h>
 
 float sbus_velocity_interpolation(uint16_t channel_input,float *velocity_range)
 {
@@ -34,12 +25,12 @@ float sbus_velocity_interpolation(uint16_t channel_input,float *velocity_range)
 	return vel_interp;
 }
 
-
+/*
 int feedback_callback(float *feedback_buffer, int buffer_len, int wheels_per_side)
 {
 	return 0;
 }
-
+*/
 
 int velocity_callback(const float *velocity_buffer, int buffer_len, int wheels_per_side)
 {
