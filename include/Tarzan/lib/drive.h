@@ -1,11 +1,11 @@
 #include <stdint.h>
 
-/*struct DiffDriveTwist {
+/* struct DiffDriveTwist {
 	float linear_x;
 	float angular_z;
-};*/
+};
 
-/*struct DiffDriveConfig { 
+struct DiffDriveConfig { 
 	float wheel_separation;
 	float wheel_separation_multiplier;
 	float wheel_radius;
@@ -18,6 +18,5 @@
 
 float sbus_velocity_interpolation(uint16_t channel,float *velocity_range, int *channel_range);
 
-uint32_t linear_actuator_pwm_interpolation(uint16_t linear_actuator_movement , uint32_t *pwm_range);  
+uint32_t one_hot_interpolation(uint16_t channel, uint32_t *pwm_range, uint16_t *channel_range);
 
-//int diffdrive_update(struct DiffDrive *drive, struct DiffDriveTwist command, int64_t time_taken_by_last_update_seconds);

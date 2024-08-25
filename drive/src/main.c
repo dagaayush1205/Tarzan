@@ -4,15 +4,18 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/uart.h>
-//#include <zephyr/logging/log.h>
+#include <zephyr/logging/log.h>
 
 #include <kyvernitis/lib/kyvernitis.h>
 
 #include <Tarzan/lib/sbus.h>
 #include <Tarzan/lib/drive.h>
 
+LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
+
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
 static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart)); //debugger
+
 
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id) {                            \
@@ -78,19 +81,19 @@ int velocity_callback(const float *velocity_buffer, int buffer_len, int wheels_p
 		return 1;
 	
 	if (pwm_motor_write(&(motor[0]), velocity_pwm_interpolation(*(velocity_buffer), wheel_velocity_range, pwm_range))) {
-//		LOG_ERR("Drive: Unable to write pwm pulse to Left");
+		LOG_ERR("Drive: Unable to write pwm pulse to Left");
 		return 1;
 	}
 	if (pwm_motor_write(&(motor[1]), velocity_pwm_interpolation(*(velocity_buffer + wheels_per_side), wheel_velocity_range, pwm_range))) {
-//		LOG_ERR("Drive: Unable to write pwm pulse to Right");
+		LOG_ERR("Drive: Unable to write pwm pulse to Right");
 		return 1; 
 	} 
 	return 0;
 }
 
-int actuator_callback(int i, uint8_t channel){
-	if(pwm_motor_write(&(motor[i]), one_hot_interpolation(channel, pwm_range))) { 
-//		LOG_ERR("Linear Actuator: Unable to write at linear actuator %d", i); 
+int actuator_callback(int i, uint8_t channel) {
+	if(pwm_motor_write(&(motor[i]), one_hot_interpolation(channel, pwm_range, channel_range))) { 
+		LOG_ERR("Linear Actuator: Unable to write at linear actuator %d", i); 
 		return 1; 
 	}
 	return 0;
@@ -106,13 +109,7 @@ int main() {
 	uint64_t drive_timestamp = 0;
 	uint64_t time_last_drive_update = 0;
 
-
-	// Angular and linear velocity
-	struct DiffDriveTwist cmd = {
-		.angular_z = 0,
-		.linear_x = 0,
-	};
-
+	// drive configurations
 	struct DiffDriveConfig drive_config = { 
 		.wheel_separation = 0.77f,
 		.wheel_separation_multiplier = 1,
@@ -124,37 +121,36 @@ int main() {
 		.update_type = POSITION_FEEDBACK,
 	};
 
+	// Angular and linear velocity
+	struct DiffDriveTwist cmd = {
+		.linear_x = 0,
+		.angular_z = 0,
+	};
 	// device ready chceks
-	if (!device_is_ready(uart_dev)) 
-	{
-//		LOG_ERR("UART device not ready");
+	if (!device_is_ready(uart_dev)) {
+		LOG_ERR("UART device not ready");
 	}
 
-	for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) 
-	{
+	for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) {
 		if (!pwm_is_ready_dt(&(motor[i].dev_spec))) 
-		{
-//			LOG_ERR( "PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
-		}
+		
+			LOG_ERR( "PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
+		
 	}
 
 	// Interrupt to get sbus data
 	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
 	
-	if(err<0)
-	{
+	if(err<0) {
 		if (err == -ENOTSUP) 
-		{
-//			LOG_ERR("Interrupt-driven UART API support not enabled");
-		} 
+			LOG_ERR("Interrupt-driven UART API support not enabled");
+		 
 		else if (err == -ENOSYS) 
-		{
-//			LOG_ERR("UART device does not support interrupt-driven API");
-		}
+			LOG_ERR("UART device does not support interrupt-driven API");
+		
 		else 
-		{
-//			LOG_ERR("Error setting UART callback: %d", err);
-		}
+			LOG_ERR("Error setting UART callback: %d", err);
+		
 	}
 
 	// enable uart device for communication
@@ -162,15 +158,13 @@ int main() {
 	
 	struct DiffDrive *drive = diffdrive_init(feedback_callback(),&drive_config, velocity_callback);	
 
-	for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) 
-	{
-		if (pwm_motor_write(&(motor[i]), 1500000)) 
-		{
-//			LOG_ERR("Unable to write pwm pulse to PWM Motor : %d", i);
+	for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) {
+		if (pwm_motor_write(&(motor[i]), 1500000)) {
+			LOG_ERR("Unable to write pwm pulse to PWM Motor : %d", i);
 		}
 	}
 
-//	LOG_ERR("Initialization completed successfully!");
+	LOG_ERR("Initialization completed successfully!");
 	
 	while(true)
 	{
@@ -192,13 +186,19 @@ int main() {
 		// drive write
 		err = diffdrive_update(drive, cmd, time_last_drive_update); 
 
-		// linear actuators interpolate and write
-		actuator_callback(2,ch[2]); 			     		
+		// linear actuators write
+		actuator_callback(2,ch[2]);
 		actuator_callback(3,ch[3]);
 
-		// arm joint interpolate and write		
-		actuator_callback(4,ch[4]);
-		actuator_callback(5,ch[5]);
+		// arm joint interpolate write		
+		actuator_callback(4,ch[6]);
+		actuator_callback(5,ch[7]);
+
+		//turn-table write
+		actuator_callback(7, ch[8]);
+		
+		//gripper write
+		actuator_callback(6, ch[5]);
 
 		time_last_drive_update = k_uptime_get() - drive_timestamp;
 	}
