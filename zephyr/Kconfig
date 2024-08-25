@@ -1,4 +1,4 @@
-config R2-D2
-	bool "Enable R2-D2"
+config Tarzan
+	bool "Enable Tarzan"
 	help
-	  This option enables R2-D2 as a Zephyr module.
+	  This option enables Tarzan as a Zephyr module.
