@@ -4,75 +4,114 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/uart.h>
+//#include <zephyr/logging/log.h>
 
 #include <kyvernitis/lib/kyvernitis.h>
 
-#include <R2-D2/lib/sbus.h>
-#include <R2-D2/lib/drive.h>
-
-#include <stdio.h>
-
+#include <Tarzan/lib/sbus.h>
+#include <Tarzan/lib/drive.h>
 
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
 static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart)); //debugger
 
-/* DT spec for encoders */
-// const struct device *const encoder_fr = DEVICE_DT_GET(DT_ALIAS(en_fr));
-// const struct device *const encoder_fl = DEVICE_DT_GET(DT_ALIAS(en_fl));
-
 /* DT spec for pwm motors */
-#define PWM_MOTOR_SETUP(pwm_dev_id)                                                                \
-	{.dev_spec = PWM_DT_SPEC_GET(pwm_dev_id),                                                  \
-	 .min_pulse = DT_PROP(pwm_dev_id, min_pulse),                                              \
+#define PWM_MOTOR_SETUP(pwm_dev_id) {                            \
+	.dev_spec = PWM_DT_SPEC_GET(pwm_dev_id),                 \
+	 .min_pulse = DT_PROP(pwm_dev_id, min_pulse),            \
 	 .max_pulse = DT_PROP(pwm_dev_id, max_pulse)},
+
 
 struct pwm_motor motor[13] = {DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
 
 // creating mssg queue to store data
 K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t), 250, 1);
 
-//struct mother_msg msg;
+// ranges used in interpolation;
 float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[]= {-5.5,5.5};
 float wheel_velocity_range[] = {-10.0, 10.0};
-uint32_t pwm_range[] = {1120000, 1880000};
-float la_speed_range[] = {-127.0, 127.0};
-float angle_range[] = {-270, 270};
-uint16_t channel_range[]={0,2047};
+uint32_t pwm_range[] = {1120000, 1500000, 1880000};
+// float la_speed_range[] = {-127.0, 127.0};
+// float angle_range[] = {-270, 270};
+uint16_t channel_range[]= {0,2047};
 
-/* Global ticks for encoders */
-//int64_t ticks_fr, ticks_fl;
+uint16_t *ch;
 
-struct DiffDriveTwist TIMEOUT_CMD = {
-	.angular_z = 0,
-	.linear_x = 0,
-};
-
-void serial_cb(const struct device *dev, void *user_data)
-{
+void serial_cb(const struct device *dev, void *user_data) {
 	uint8_t c;
 	
 	if (!uart_irq_update(uart_dev)) 
-	{
 		return;
-	}
-
 	if (!uart_irq_rx_ready(uart_dev)) 
-	{
 		return;
-	}
 
 	while (uart_fifo_read(uart_dev, &c, 1) == 1) 
-	{
 		k_msgq_put(&uart_msgq, &c, K_NO_WAIT); // put message from UART to queue
-	}
 }
 
-int main(){
+// creating sbus packets from msg queue
+int create_sbus_packet() {
 
-	int err,i,flag=0;
+	uint8_t packet[25],	// to store sbus packet
+		start = 0x0F,  // start byte 
+		message=0,   // to store a byte from queue
+		i;
+
+	k_msgq_get(&uart_msgq, &message,K_MSEC(4));
+
+	if(message == start) {
+		for(i = 0; i < 25; i++) {
+			packet[i] = message;
+			k_msgq_get(&uart_msgq, &message,K_MSEC(4));
+		}
+		ch = parse_buffer(packet);
+		return 1;
+	}
+
+	else 
+		return 0;
+}
+
+int velocity_callback(const float *velocity_buffer, int buffer_len, int wheels_per_side) {
+	
+	if (buffer_len < wheels_per_side * 2) 
+		return 1;
+	
+	if (pwm_motor_write(&(motor[0]), velocity_pwm_interpolation(*(velocity_buffer), wheel_velocity_range, pwm_range))) {
+//		LOG_ERR("Drive: Unable to write pwm pulse to Left");
+		return 1;
+	}
+	if (pwm_motor_write(&(motor[1]), velocity_pwm_interpolation(*(velocity_buffer + wheels_per_side), wheel_velocity_range, pwm_range))) {
+//		LOG_ERR("Drive: Unable to write pwm pulse to Right");
+		return 1; 
+	} 
+	return 0;
+}
+
+int actuator_callback(int i, uint8_t channel){
+	if(pwm_motor_write(&(motor[i]), one_hot_interpolation(channel, pwm_range))) { 
+//		LOG_ERR("Linear Actuator: Unable to write at linear actuator %d", i); 
+		return 1; 
+	}
+	return 0;
+}
+
+int feedback_callback() {
+	return 0;
+}
+
+int main() {
+
+	int err,flag=0;
 	uint64_t drive_timestamp = 0;
 	uint64_t time_last_drive_update = 0;
+
+
+	// Angular and linear velocity
+	struct DiffDriveTwist cmd = {
+		.angular_z = 0,
+		.linear_x = 0,
+	};
 
 	struct DiffDriveConfig drive_config = { 
 		.wheel_separation = 0.77f,
@@ -85,23 +124,17 @@ int main(){
 		.update_type = POSITION_FEEDBACK,
 	};
 
-	// Angular and linear velocity
-	struct DiffDriveTwist cmd = {
-            .angular_z = 0,
-            .linear_x = 0,
-	};
-
 	// device ready chceks
 	if (!device_is_ready(uart_dev)) 
 	{
-		printk( "UART device not ready");
+//		LOG_ERR("UART device not ready");
 	}
 
 	for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) 
 	{
 		if (!pwm_is_ready_dt(&(motor[i].dev_spec))) 
 		{
-			printk( "PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
+//			LOG_ERR( "PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
 		}
 	}
 
@@ -112,79 +145,60 @@ int main(){
 	{
 		if (err == -ENOTSUP) 
 		{
-			printk("Interrupt-driven UART API support not enabled");
+//			LOG_ERR("Interrupt-driven UART API support not enabled");
 		} 
 		else if (err == -ENOSYS) 
 		{
-			printk("UART device does not support interrupt-driven API");
+//			LOG_ERR("UART device does not support interrupt-driven API");
 		}
 		else 
 		{
-			printk("Error setting UART callback: %d", err);
+//			LOG_ERR("Error setting UART callback: %d", err);
 		}
 	}
 
 	// enable uart device for communication
 	uart_irq_rx_enable(uart_dev);
 	
-	struct DiffDrive *drive = diffdrive_init(&drive_config, feedback_callback, velocity_callback);	
+	struct DiffDrive *drive = diffdrive_init(feedback_callback(),&drive_config, velocity_callback);	
 
 	for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) 
 	{
 		if (pwm_motor_write(&(motor[i]), 1500000)) 
 		{
-			printk("Unable to write pwm pulse to PWM Motor : %d", i);
+//			LOG_ERR("Unable to write pwm pulse to PWM Motor : %d", i);
 		}
 	}
 
-	printk("Initialization completed successfully!");
+//	LOG_ERR("Initialization completed successfully!");
 	
 	while(true)
 	{
-// 		parse uart data return 1 if start bit not found
-		flag=sbus_parsing();
-		if(flag == 0)
-		{
-			continue;
-		}
-		else 
-		{
-// 			angular velocity interpolation
-			cmd.angular_z = sbus_velocity_interpolation(ch[0],angular_velocity_range);
-//			printk("%2d: %5d    %0.2f   ",1,ch[0], cmd.angular_z);
+		// call to create sbus packet
+		flag = create_sbus_packet();
 	
-// 			linear velocity interpolation
-			cmd.linear_x = sbus_velocity_interpolation(ch[1],linear_velocity_range);
-//			printk("%2d: %5d    %0.2f   ",2,ch[1],cmd.linear_x);
-				
+		// check if sbus packet found
+		if(flag == 0)
+		continue;
 
-// 			linear actuators print
-//			printk("%2d: %5d    ",3,ch[2]);
-//			printk("%2d: %5d    ",4,ch[3]);
-//
-//
-// 			arm joint print
-//			printk("%2d: %5d    ",5,ch[4]);
-//			printk("%2d: %5d    ",6,ch[5]);
-//
-//			turntable print
-//			printk("%2d: %5d    ",7,ch[6]);
-//
-//			printk("\n");
-		}
+		// angular velocity interpolation
+		cmd.angular_z = sbus_velocity_interpolation(ch[0],angular_velocity_range, channel_range);
+
+		// linear velocity interpolation
+		cmd.linear_x = sbus_velocity_interpolation(ch[1],linear_velocity_range, channel_range);
 		
 		drive_timestamp = k_uptime_get();
 
-// 		drive write
+		// drive write
 		err = diffdrive_update(drive, cmd, time_last_drive_update); 
 
-// 		linear actuators interpolate and write
-		linear_actuator_write(2,ch[2]); 			     		
-		linear_actuator_write(3,ch[3]);
+		// linear actuators interpolate and write
+		actuator_callback(2,ch[2]); 			     		
+		actuator_callback(3,ch[3]);
 
-// 		arm joint interpolate and write		
-		linear_actuator_write(4,ch[4]);
-		linear_actuator_write(5,ch[5]);
+		// arm joint interpolate and write		
+		actuator_callback(4,ch[4]);
+		actuator_callback(5,ch[5]);
 
 		time_last_drive_update = k_uptime_get() - drive_timestamp;
 	}

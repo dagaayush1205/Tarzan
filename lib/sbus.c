@@ -1,31 +1,5 @@
 #include <stdint.h>
 
-// creating sbus packets from msg queue
-int sbus_parsing() {
-
-	uint8_t packet[25],	// to store sbus packet
-		start = 0x0F,  // start byte 
-		end = 0x00,   // end byte
-		message=0,   // to store a byte from queue
-		i;
-
-	k_msgq_get(&uart_msgq, &message,K_MSEC(4));
-
-	if(message == start) {
-		for(i = 0; i < 25; i++) {
-			packet[i] = message;
-			k_msgq_get(&uart_msgq, &message,K_MSEC(4));
-		}
-		// check if the last byte was 0x00
-		if(packet[25] == end)
-		ch = parse_buffer(packet);
-		return 1;
-	}
-
-	else 
-		return 0;
-}
-
 // creating 11 bit channel
 uint16_t *parse_buffer(uint8_t buff[]) { 
 		
