@@ -8,6 +8,9 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/uart.h>
+#include <zephyr/logging/log.h>
+
+LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
 static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart)); //debugger
@@ -57,7 +60,7 @@ int sbus_parsing() {
 			packet[packet_pos] = message;
 			k_msgq_get(&uart_msgq, &message,K_MSEC(4));
 		}
-		// check if the last byte was 0x00
+		LOG_INF("%o %o %o",packet[0],packet[23], packet[24]);
 		ch = parse_buffer(packet);
 		return 1;
 	} 
@@ -85,6 +88,30 @@ void serial_cb(const struct device *dev, void *user_data)
 	{
 		k_msgq_put(&uart_msgq, &c, K_NO_WAIT); // put message from UART to queue
 	}
+}
+
+float one_hot_interpolation(uint16_t channel_input) {
+
+	if (channel_input > channel_range[1])
+	{
+		return pwm_range[1];
+	}
+
+	if (channel_input < channel_range[0])
+	{
+		return pwm_range[0];
+	}
+
+	if (channel_input < 1005 && channel_input > 995) 
+	{
+		return (pwm_range[0] + pwm_range[1]) / 2;
+	}
+	float dchannel = channel_range[1] - channel_range[0];
+	float dpwm = pwm_range[1] - pwm_range[0];
+
+	uint32_t pwm_interp = pwm_range[0] + (dpwm / dchannel) * (channel_input - channel_range[0]);
+
+	return pwm_interp;
 }
 
 float sbus_velocity_interpolation(uint16_t channel_input,float *velocity_range)
@@ -152,8 +179,17 @@ uint32_t linear_actuator_pwm_interpolation(uint16_t linear_actuator_movement , u
 		return 1500000;
 
 }
+
 int linear_actuator_write(int i, int dir){
 	if(pwm_motor_write(&(motor[i]), linear_actuator_pwm_interpolation(dir, pwm_range)))
+	{
+		printk("Linear Actuator: Unable to write at linear actuator %d", i);
+		return 1;
+	}
+}
+
+int arm_joints_write(int i, uint16_t ch){
+	if(pwm_motor_write(&(motor[i]), one_hot_interpolation(ch)))
 	{
 		printk("Linear Actuator: Unable to write at linear actuator %d", i);
 		return 1;
@@ -182,14 +218,14 @@ int main(){
 
 	if (!device_is_ready(uart_dev)) 
 	{
-		printk( "UART device not ready");
+		LOG_ERR("UART device not ready");
 	}
 
 	for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) 
 	{
 		if (!pwm_is_ready_dt(&(motor[i].dev_spec))) 
 		{
-			printk( "PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
+			LOG_ERR("PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
 		}
 	}
 // 	Interrupt
@@ -238,26 +274,22 @@ int main(){
 		{
 // 			angular velocity interpolation
 			cmd.angular_z = sbus_velocity_interpolation(ch[0],angular_velocity_range);
-			printk("%2d: %5d    %0.2f   ",1,ch[0], cmd.angular_z);
-	
+//			LONG_INF("%2d: %5d    %0.2f   ",2,ch[1],cmd.linear_x);	
+
 // 			linear velocity interpolation
 			cmd.linear_x = sbus_velocity_interpolation(ch[1],linear_velocity_range);
-			printk("%2d: %5d    %0.2f   ",2,ch[1],cmd.linear_x);
-				
+//			LONG_INF("%2d: %5d    %0.2f  \n ",1,ch[0], cmd.angular_z);
 
-// 			linear actuators print
-			printk("%2d: %5d    ",3,ch[2]);
-			printk("%2d: %5d    ",4,ch[3]);
+//			arm-joints
+//			LONG_INF("%5d %5d",ch[6], ch[7]);
 
+//			linear-actuators
+//			LONG_INF("%2d: %5d    ",4,ch[3]);
+//			LONG_INF("%2d: %5d    ",5,ch[4]);
 
-// 			arm joint print
-			printk("%2d: %5d    ",5,ch[4]);
-			printk("%2d: %5d    ",6,ch[5]);
+//			turn-table
+//			LONG_INF("%2d: %5d    ",6,ch[5]);
 
-// 			turntable print
-			printk("%2d: %5d    ",7,ch[6]);
-
-			printk("\n");
 		}
 		
 		drive_timestamp = k_uptime_get();
@@ -270,9 +302,11 @@ int main(){
 		linear_actuator_write(3,ch[3]);
 
 // 		arm joint interpolate and write		
-		linear_actuator_write(4,ch[4]);
-		linear_actuator_write(5,ch[5]);
+		arm_joints_write(4,ch[6]);
+		arm_joints_write(5,ch[7]);
 
+//		turn-table write
+		linear_actuator_write(6,ch[5]);
 
 		time_last_drive_update = k_uptime_get() - drive_timestamp;
 	}
