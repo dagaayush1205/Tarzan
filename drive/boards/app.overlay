@@ -151,3 +151,9 @@
 		pinctrl-names = "default";
 	};
 };
+
+&zephyr_udc0 {
+	cdc_acm_uart0 {
+		compatible = "zephyr, cdc-acm-uart";
+	};
+};
