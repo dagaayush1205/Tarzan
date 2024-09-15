@@ -1,10 +1,10 @@
 #include <stdint.h>
 
 // creating 11 bit channel
-static uint16_t *parse_buffer(uint8_t buff[]) { 
+uint16_t *parse_buffer(uint8_t buff[]) { 
 		
 	// to store channels
-	uint16_t channel[16];
+	static uint16_t channel[16];
 
 	// masking byte shiftings bits (value in hexa '0x07FF')
 	uint16_t mask = 0x7ff;
