@@ -2,7 +2,7 @@
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/uart.h>
-#include <zephyr/logging.h>
+#include <zephyr/logging/log.h>
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/usb/usbd.h> 
 
@@ -11,13 +11,11 @@
 #include <Tarzan/lib/sbus.h>
 #include <Tarzan/lib/drive.h>
 
-LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL):
+LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
-static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart)); //debugger
+static const struct device *const uart_debug = DEVICE_DT_GET(DT_CHOSEN(zephyr_console)); //debugger
 
-const struct device *dev; 
-dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id)                                                                \
 	{.dev_spec = PWM_DT_SPEC_GET(pwm_dev_id),                                                  \
@@ -61,8 +59,7 @@ int create_sbus_packet() {
 	}
 }
 
-void serial_cb(const struct device *dev, void *user_data)
-{
+void serial_cb(const struct device *dev, void *user_data) {
 	uint8_t c;
 	
 	if (!uart_irq_update(uart_dev)) 
@@ -81,19 +78,20 @@ void serial_cb(const struct device *dev, void *user_data)
 	}
 }
 
-void telemetry_callback(const struct device *dev, void *user_data) { 
-	ARG_UNUSED(user_data); 
-
-	while(uart_irq_update(dev) && uart_irq_is_pending(dev)) {
-		if(uart_irq_tx_ready(dev)) { 
-			uart_fifo_fill(dev, ch, 16*sizeof(uint16_t));
-		}
+//void telemetry_callback(const struct device *dev, void *user_data) { 
+//	ARG_UNUSED(user_data); 
+//
+//	while(uart_irq_update(dev) && uart_irq_is_pending(dev)) {
+//		if(uart_irq_tx_ready(dev)) { 
+//			uart_fifo_fill(dev, ch, 16*sizeof(uint16_t));
+//		}
+//	}
 
 int main() {
 
 	int err,i,flag=0;
 
-	if(!device_is_ready(dev) { 
+	if(!device_is_ready(uart_debug)) { 
 		LOG_ERR("CDC ACM device is not ready"); 
 	}
 
@@ -120,12 +118,12 @@ int main() {
 	LOG_ERR("Initialization completed successfully!");
 	
 	while(true) {
-		flag=sbus_parsing();
+		flag=create_sbus_packet();
 		if(flag == 0)
 			continue;
 		 else {
-				 uart_irq_callback_set(dev, interrupt_handler);
+			  LOG_INF("%hhx",ch[i]);	
+			 // uart_irq_callback_set(dev, interrupt_handler);
 		 	}
 		 }
-	}
 }

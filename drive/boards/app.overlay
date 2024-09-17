@@ -1,4 +1,3 @@
-
 #include <zephyr/dt-bindings/sensor/qdec_stm32.h>
 /{
 	pwmmotors {
@@ -72,12 +71,12 @@
 		};
 	};
 	aliases {
-			debug-uart = &usart2;
+			debug-uart = &cdc_acm_uart0;
 			mother-uart = &usart6;
 	};
     chosen {
-            zephyr,console = &usart2;
-            zephyr,shell-uart = &usart2;
+            zephyr,console = &cdc_acm_uart0;
+            zephyr,shell-uart = &cdc_acm_uart0;
 	};
 };
 
@@ -95,6 +94,14 @@
         pinctrl-names= "default";
         status = "okay";
         current-speed = <115200>;
+};
+
+&zephyr_udc0 {
+	cdc_acm_uart0: cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "CDC_ACM_0";
+		status = "okay";
+	};
 };
 
 &timers2 {
@@ -152,8 +159,3 @@
 	};
 };
 
-&zephyr_udc0 {
-	cdc_acm_uart0 {
-		compatible = "zephyr, cdc-acm-uart";
-	};
-};
