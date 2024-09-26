@@ -71,12 +71,12 @@
 		};
 	};
 	aliases {
-			debug-uart = &cdc_acm_uart0;
+			//debug-uart = &zephyr_udc0;
 			mother-uart = &usart6;
 	};
     chosen {
             zephyr,console = &cdc_acm_uart0;
-            zephyr,shell-uart = &cdc_acm_uart0;
+            //zephyr,shell-uart = &zephyr_udc0;
 	};
 };
 
@@ -99,7 +99,6 @@
 &zephyr_udc0 {
 	cdc_acm_uart0: cdc_acm_uart0 {
 		compatible = "zephyr,cdc-acm-uart";
-		label = "CDC_ACM_0";
 		status = "okay";
 	};
 };
