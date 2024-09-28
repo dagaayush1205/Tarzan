@@ -302,12 +302,14 @@ int main(){
 		linear_actuator_write(3,ch[3]);
 
 // 		arm joint interpolate and write		
-		arm_joints_write(4,ch[6]);
-		arm_joints_write(5,ch[7]);
+		arm_joints_write(8,ch[6]);
+		arm_joints_write(9,ch[7]);
 
 //		turn-table write
-		linear_actuator_write(6,ch[5]);
+		linear_actuator_write(12,ch[5]);
 
+		// gripper-arm write
+		linear_actuator_write(4,ch[4]);
 		time_last_drive_update = k_uptime_get() - drive_timestamp;
 	}
 }
