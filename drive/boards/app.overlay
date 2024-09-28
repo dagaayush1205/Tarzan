@@ -71,11 +71,11 @@
 		};
 	};
 	aliases {
-			//debug-uart = &zephyr_udc0;
+			debug-uart = &usart2;
 			mother-uart = &usart6;
 	};
     chosen {
-            zephyr,console = &cdc_acm_uart0;
+            zephyr,console = &usart2;
             //zephyr,shell-uart = &zephyr_udc0;
 	};
 };

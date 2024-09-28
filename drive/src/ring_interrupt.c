@@ -99,7 +99,7 @@ int main() {
 	// enable uart device for communication
 	uart_irq_rx_enable(uart_dev);
 	
-	LOG_ERR("Initialization completed successfully!");
+	LOG_INF("Initialization completed successfully!");
 	
 	while(true) {
 		// call to create sbus packet
@@ -107,11 +107,14 @@ int main() {
 	
 		// check if sbus packet found
 		if(flag == 0) {
-			printk("Corrupt Packet\n");
+			printk("Corrupt Packet");
 			continue;
 		}
 		else { 
-			printk("%d", ch[0]);
+			for(int i=0; i<16;i++) {
+				printk("%d \t", ch[i]);
+			}
 		}
+			printk("\n");
 	}
 }
