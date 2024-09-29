@@ -309,7 +309,7 @@ int main(){
 		arm_joints_write(12,ch[5]);
 
 		// gripper-arm write
-		linear_actuator_write(4,ch[4]);
+		arm_joints_write(4,ch[4]);
 		time_last_drive_update = k_uptime_get() - drive_timestamp;
 	}
 }
