@@ -275,7 +275,7 @@ int main(){
 // 			angular velocity interpolation
 			cmd.angular_z = sbus_velocity_interpolation(ch[0],angular_velocity_range);
 //			LONG_INF("%2d: %5d    %0.2f   ",2,ch[1],cmd.linear_x);	
-
+			printk("%d\t%d\n",ch[0],ch[1]);
 // 			linear velocity interpolation
 			cmd.linear_x = sbus_velocity_interpolation(ch[1],linear_velocity_range);
 //			LONG_INF("%2d: %5d    %0.2f  \n ",1,ch[0], cmd.angular_z);
@@ -306,7 +306,7 @@ int main(){
 		arm_joints_write(9,ch[7]);
 
 //		turn-table write
-		linear_actuator_write(12,ch[5]);
+		arm_joints_write(12,ch[5]);
 
 		// gripper-arm write
 		linear_actuator_write(4,ch[4]);
