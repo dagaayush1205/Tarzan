@@ -76,7 +76,7 @@
 	};
     chosen {
             zephyr,console = &usart2;
-            //zephyr,shell-uart = &zephyr_udc0;
+            zephyr,shell-uart = &usart2;
 	};
 };
 
@@ -136,7 +136,7 @@
 	};
 };
 
-&timers12 {
+&timers12 { //does not work
 	status = "okay";
 	st,prescaler = <5599>;
 
