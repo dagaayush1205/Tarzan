@@ -34,13 +34,12 @@ float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[]= {-5.5,5.5};
 float wheel_velocity_range[] = {-10.0, 10.0};
 uint32_t pwm_range[] = {1120000, 1500000, 1880000};
-// float la_speed_range[] = {-127.0, 127.0};
-// float angle_range[] = {-270, 270};
 uint16_t channel_range[]= {0,2047};
 
 uint16_t *ch;
 
 void serial_cb(const struct device *dev, void *user_data) {
+	ARG_UNUSED(user_data);
 	uint8_t c;
 	
 	if (!uart_irq_update(uart_dev)) 
@@ -48,31 +47,12 @@ void serial_cb(const struct device *dev, void *user_data) {
 	if (!uart_irq_rx_ready(uart_dev)) 
 		return;
 
-	while (uart_fifo_read(uart_dev, &c, 1) == 1) 
-		k_msgq_put(&uart_msgq, &c, K_NO_WAIT); // put message from UART to queue
-}
-
-// creating sbus packets from msg queue
-int create_sbus_packet() {
-
-	uint8_t packet[25],	// to store sbus packet
-		start = 0x0F,  // start byte 
-		message=0,   // to store a byte from queue
-		i;
-
-	k_msgq_get(&uart_msgq, &message,K_MSEC(4));
-
-	if(message == start) {
-		for(i = 0; i < 25; i++) {
-			packet[i] = message;
-			k_msgq_get(&uart_msgq, &message,K_MSEC(4));
-		}
-		ch = parse_buffer(packet);
-		return 1;
+	while (uart_fifo_read(uart_dev, &c, 1) == 1) {
+		if(c != start) continue; 
+		packet[0] = c; 
+		if(uart_fifo_read(uart_dev, packet+1, 24) == 24)  
+			k_msgq_put(&uart_msgq, packet, K_NO_WAIT);
 	}
-
-	else 
-		return 0;
 }
 
 int velocity_callback(const float *velocity_buffer, int buffer_len, int wheels_per_side) {
@@ -164,16 +144,18 @@ int main() {
 		}
 	}
 
-	LOG_ERR("Initialization completed successfully!");
+	LOG_INF("Initialization completed successfully!");
 	
 	while(true)
 	{
-		// call to create sbus packet
-		flag = create_sbus_packet();
-	
-		// check if sbus packet found
-		if(flag == 0)
-		continue;
+		k_msgq_get(&uart_msgq, &packet, K_MSEC(20));
+		
+		ch = parse_buffer(packet); 
+
+		// printing channels 
+		for(int i=0; i<16; i++)
+			printk("%d\t", ch[i]);
+		printk("\n"); 
 
 		// angular velocity interpolation
 		cmd.angular_z = sbus_velocity_interpolation(ch[0],angular_velocity_range, channel_range);
@@ -184,7 +166,7 @@ int main() {
 		drive_timestamp = k_uptime_get();
 
 		// drive write
-		err = diffdrive_update(drive, cmd, time_last_drive_update); 
+		err = diffdrive_update(drive, cmd, time_last_drive_update);
 
 		// linear actuators write
 		actuator_callback(2,ch[2]);
