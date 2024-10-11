@@ -11,23 +11,22 @@
 #include <Tarzan/lib/sbus.h>
 #include <Tarzan/lib/drive.h>
 
-
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
 static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart)); //debugger
 
 // DT spec for stepper 
 const struct stepper_motor stepper[3] = {
 	{
-		.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper-motor1), dir_gpios),
-		.step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper-motor1), step_gpios)
+		.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), dir_gpios),
+		.step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), step_gpios)
 	},
 	{
-		.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper-motor2), dir_gpios), 
-		.step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper-motor2), step_gpios)
+		.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), dir_gpios), 
+		.step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), step_gpios)
 	},
 	{
-		.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper-motor3), dir_gpios), 
-		.step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper-motor3), step_gpios)
+		.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), dir_gpios), 
+		.step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), step_gpios)
 	}
 }; 
 
@@ -81,7 +80,7 @@ int arm_joints(int motor, uint8_t ch) {
 int main() {
 
 	int err;
-
+	uint8_t c = 1200;
 	// device ready chceks
 	if (!device_is_ready(uart_dev)) {
 		printk("UART device not ready");
@@ -138,11 +137,11 @@ int main() {
 
 		// printing channels 
 		for(int i=0; i<16; i++)
-			printk("%d\t", ch[i]);
+			printk("%hhx\t", packet[i]);
 		printk("\n"); 
 
 		// first link 
-		arm_joints(0, ch[6]);
+		arm_joints(0, c);
 
 		// second link 
 		arm_joints(1, ch[7]);
