@@ -164,8 +164,8 @@
 		compatible = "stepper-motors"; 
 		stepper_motor_1: motor_1 { 
 			label = "First link"; 
-			dir-gpios = <&gpioa 3 GPIO_ACTIVE_LOW>; //A0
-			step-gpios = <&gpioc 0 GPIO_ACTIVE_LOW>; //A1
+			dir-gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>; //D0 PB7 
+			step-gpios = <&gpioc 0 GPIO_ACTIVE_HIGH>; //A1 PC0
 		};
 	
 		stepper_motor_2: motor_2 {
