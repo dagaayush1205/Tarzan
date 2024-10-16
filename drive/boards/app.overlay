@@ -159,6 +159,17 @@
 		pinctrl-0 = <&tim13_ch1_pa6>;
 		pinctrl-names = "default";
 	};
+};
+
+&timers15 { 
+	status = "okay"; 
+	st,prescaler = <5599>; 
+
+	pwm15: pwm { 
+		status = "okay"; 
+		pinctrl-0 = <&tim15_ch1_pc12 &tim15_ch1n_pe4 &tim15_ch1_pe5 &tim15_ch2_pe6>;
+		pinctrl-names = "deafult"; 
+	};
 
 	steppermotors { 
 		compatible = "stepper-motors"; 
