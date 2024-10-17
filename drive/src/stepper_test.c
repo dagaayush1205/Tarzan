@@ -34,15 +34,11 @@ const struct stepper_motor stepper[3] = {
 K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t), 250, 1);
 
 // ranges used in interpolation;
-float linear_velocity_range[] = {-1.5, 1.5};
-float angular_velocity_range[]= {-5.5,5.5};
-float wheel_velocity_range[] = {-10.0, 10.0};
-uint32_t pwm_range[] = {1120000, 1500000, 1880000};
 uint16_t channel_range[]= {0,950, 2047};
 
 uint16_t *ch;
 uint8_t packet[25];
-
+int pos = 0;
 void serial_cb(const struct device *dev, void *user_data) {
 	ARG_UNUSED(user_data);
 	uint8_t start= 0x0F; 
@@ -61,16 +57,41 @@ void serial_cb(const struct device *dev, void *user_data) {
 	}
 }
 
-int arm_joints(int motor, uint8_t ch) {
+int Stepper_motor_write(const struct stepper_motor *motor, uint8_t cmd) { 
+	
+	if(cmd == 1) {
+		gpio_pin_set_dt(&(motor->dir), 1); 
+		pos +=1; //clockwise
+	}
+	else { 
+		gpio_pin_set_dt(&(motor->dir), 0); 
+		pos -=1;
+	}	//anticlockwise 
+	switch(pos & 0x03) { 
+		case 0: gpio_pin_set_dt(&(motor->step), (0b10&(1<<0))?1:0); 
+			break; 
+		case 1: gpio_pin_set_dt(&(motor->step), (0b11&(1<<0))?1:0);  
+			break; 
+		case 2: gpio_pin_set_dt(&(motor->step), (0b01&(1<<0))?1:0);  
+			break; 
+		case 3: gpio_pin_set_dt(&(motor->step), (0b00&(1<<0))?1:0); 
+			break;
+	}
+	return 0;
+} 
 
+void arm_joints(int motor, uint8_t ch) {
+
+	// Stepper Motor Forward 
 	if((ch>channel_range[1])) { 
-		if(stepper_motor_write(&stepper[motor], 1)) { 
+		if(Stepper_motor_write(&stepper[motor], 1)) { 
 				printk("Unable to write motor command to Stepper %d", stepper[motor]); 
 				return 0; 
 		}
 	}
+	// Stepper Motor Backward
 	else { 
-		if(stepper_motor_write(&stepper[motor], 2)) {
+		if(Stepper_motor_write(&stepper[motor], 2)) {
 				printk("Unable to write motor command to Stepper %d", stepper[motor]);
 				return 0; 
 		}
@@ -80,7 +101,7 @@ int arm_joints(int motor, uint8_t ch) {
 int main() {
 
 	int err;
-	uint8_t c = 1200;
+
 	// device ready chceks
 	if (!device_is_ready(uart_dev)) {
 		printk("UART device not ready");
@@ -124,6 +145,7 @@ int main() {
 			return 0;
 		}	
 	}
+
 	// enable uart device for communication
 	uart_irq_rx_enable(uart_dev);
 	
@@ -131,17 +153,17 @@ int main() {
 	
 	while(true)
 	{
-		k_msgq_get(&uart_msgq, &packet, K_MSEC(20));
+		k_msgq_get(&uart_msgq, &packet, K_NO_WAIT);
 		
 		ch = parse_buffer(packet); 
 
 		// printing channels 
-		for(int i=0; i<16; i++)
-			printk("%hhx\t", packet[i]);
-		printk("\n"); 
+		//for(int i=0; i<16; i++)
+		//	printk("%hhx\t", packet[i]);
+		//printk("\n"); 
 
 		// first link 
-		arm_joints(0, c);
+		arm_joints(0, ch[6]);
 
 		// second link 
 		arm_joints(1, ch[7]);
