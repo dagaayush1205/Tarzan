@@ -1,0 +1,15 @@
+/ {
+	aliases { 
+		mother-uart = &uart;
+	};
+
+	chosen {
+		zephyr,console = &uart;
+	};
+	uart: uart0 {
+		status="okay";
+		compatible = "zephyr,native-tty-uart";
+		serial-port = "dev/ttyUSB0";
+		current-speed = <115200>;
+	};	
+};
