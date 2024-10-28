@@ -272,44 +272,45 @@ int main(){
 		}
 		else 
 		{
-// 			angular velocity interpolation
-			cmd.angular_z = sbus_velocity_interpolation(ch[0],angular_velocity_range);
-//			LONG_INF("%2d: %5d    %0.2f   ",2,ch[1],cmd.linear_x);	
-			printk("%d\t%d\n",ch[0],ch[1]);
-// 			linear velocity interpolation
-			cmd.linear_x = sbus_velocity_interpolation(ch[1],linear_velocity_range);
-//			LONG_INF("%2d: %5d    %0.2f  \n ",1,ch[0], cmd.angular_z);
+        drive_timestamp = k_uptime_get();
+        arm_joints_write(4, ch[4]); // turn-table
+        
+        arm_joints_write(5, ch[5]); // Line 1(turn-table)
 
-//			arm-joints
-//			LONG_INF("%5d %5d",ch[6], ch[7]);
+        arm_joints_write(6, ch[6]); // Link 2
 
-//			linear-actuators
-//			LONG_INF("%2d: %5d    ",4,ch[3]);
-//			LONG_INF("%2d: %5d    ",5,ch[4]);
+        arm_joints_write(7, ch[7]); // ABox
 
-//			turn-table
-//			LONG_INF("%2d: %5d    ",6,ch[5]);
 
-		}
-		
-		drive_timestamp = k_uptime_get();
+        for(int i = 0 ; i < 16 ; i++)
+        {
+          printk("%d \t", ch[i]);
+        }
+        printk("\n");
 
-// 		drive write
-		err = diffdrive_update(drive, cmd, time_last_drive_update); 
 
-// 		linear actuators interpolate and write
-		linear_actuator_write(2,ch[2]); 			     		
-		linear_actuator_write(3,ch[3]);
+      if(ch[8] > 300)
+      {
+        cmd.angular_z = sbus_velocity_interpolation(ch[0], angular_velocity_range);
+        cmd.linear_x = sbus_velocity_interpolation(ch[1], linear_velocity_range);
 
-// 		arm joint interpolate and write		
-		arm_joints_write(8,ch[6]);
-		arm_joints_write(9,ch[7]);
+        err = diffdrive_update(drive, cmd, time_last_drive_update);
+        
+        linear_actuator_write(2, ch[2]);
+        linear_actuator_write(3, ch[3]);
 
-//		turn-table write
-		arm_joints_write(12,ch[5]);
+      }
+      else{
+        arm_joints_write(8, ch[0]); // Y of YPR
+        arm_joints_write(9, ch[1]); // P of YPR
+        
+        arm_joints_write(10, ch[2]); //Gripper1
+        arm_joints_write(13, ch[3]); //Gripper2
+        arm_joints_write(14, ch[8]); //R of YPR
 
-		// gripper-arm write
-		arm_joints_write(4,ch[4]);
-		time_last_drive_update = k_uptime_get() - drive_timestamp;
+      }
+  		time_last_drive_update = k_uptime_get() - drive_timestamp;
+    }
+
 	}
 }
