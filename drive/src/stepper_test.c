@@ -11,6 +11,7 @@
 #include <Tarzan/lib/sbus.h>
 #include <Tarzan/lib/drive.h>
 
+LOG_MODULE_REGISTER(stepper_test, CONFIG_LOG_DEFAULT_LEVEL);
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
 static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart)); //debugger
 
@@ -39,6 +40,8 @@ uint16_t channel_range[]= {0,950, 2047};
 uint16_t *ch;
 uint8_t packet[25];
 int pos = 0;
+uint64_t time, last_time=0.0;
+float stepInterval;
 void serial_cb(const struct device *dev, void *user_data) {
 	ARG_UNUSED(user_data);
 	uint8_t start= 0x0F; 
@@ -57,7 +60,14 @@ void serial_cb(const struct device *dev, void *user_data) {
 	}
 }
 
-int Stepper_motor_write(const struct stepper_motor *motor, uint8_t cmd) { 
+void setSpeed(float speed){
+	if(speed = 0.0) 
+		stepInterval = 0.0;
+	else 
+		stepInterval = (1000000/speed);
+}
+
+int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd) { 
 	
 	if(cmd == 1) {
 		gpio_pin_set_dt(&(motor->dir), 1); 
@@ -68,25 +78,30 @@ int Stepper_motor_write(const struct stepper_motor *motor, uint8_t cmd) {
 		pos -=1;
 	}	//anticlockwise 
 	switch(pos & 0x03) { 
-		case 0: gpio_pin_set_dt(&(motor->step), (0b10&(1<<0))?1:0); 
+		case 0: gpio_pin_set_dt(&(motor->step),0);	//(0b10&(1<<0))?1:0); 
 			break; 
-		case 1: gpio_pin_set_dt(&(motor->step), (0b11&(1<<0))?1:0);  
+		case 1: gpio_pin_set_dt(&(motor->step),1);	//(0b11&(1<<0))?1:0);  
 			break; 
-		case 2: gpio_pin_set_dt(&(motor->step), (0b01&(1<<0))?1:0);  
+		case 2: gpio_pin_set_dt(&(motor->step),1);	//(0b01&(1<<0))?1:0);  
 			break; 
-		case 3: gpio_pin_set_dt(&(motor->step), (0b00&(1<<0))?1:0); 
+		case 3: gpio_pin_set_dt(&(motor->step),0);	//(0b00&(1<<0))?1:0); 
 			break;
 	}
 	return 0;
 } 
 
-void arm_joints(int motor, uint8_t ch) {
+void arm_joints(int motor, uint16_t ch) {
 
+	setSpeed(2);
 	// Stepper Motor Forward 
-	if((ch>channel_range[1])) { 
-		if(Stepper_motor_write(&stepper[motor], 1)) { 
+	if((ch>channel_range[1])) {
+		time = k_uptime_ticks(); 
+		if((time-last_time)>=i){  
+			if(Stepper_motor_write(&stepper[motor], 1)) { 
 				printk("Unable to write motor command to Stepper %d", stepper[motor]); 
 				return 0; 
+			}
+			last_time = time; 
 		}
 	}
 	// Stepper Motor Backward
@@ -101,6 +116,7 @@ void arm_joints(int motor, uint8_t ch) {
 int main() {
 
 	int err;
+	uint16_t c = 2000;
 
 	// device ready chceks
 	if (!device_is_ready(uart_dev)) {
@@ -147,28 +163,18 @@ int main() {
 	}
 
 	// enable uart device for communication
-	uart_irq_rx_enable(uart_dev);
+//	uart_irq_rx_enable(uart_dev);
 	
-	printk("Initialization completed successfully!");
+	LOG_INF("Initialization completed successfully!");
 	
 	while(true)
 	{
-		k_msgq_get(&uart_msgq, &packet, K_NO_WAIT);
+	//	k_msgq_get(&uart_msgq, &packet, K_NO_WAIT);
 		
-		ch = parse_buffer(packet); 
-
-		// printing channels 
-		//for(int i=0; i<16; i++)
-		//	printk("%hhx\t", packet[i]);
-		//printk("\n"); 
+	//	ch = parse_buffer(packet); 
 
 		// first link 
-		arm_joints(0, ch[6]);
+		arm_joints(0, c);
 
-		// second link 
-		arm_joints(1, ch[7]);
-		
-		// turn table 
-		arm_joints(2, ch[8]);
 	}
 }
