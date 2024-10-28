@@ -15,10 +15,6 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
 static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart)); //debugger
 
-/* DT spec for encoders */
-// const struct device *const encoder_fr = DEVICE_DT_GET(DT_ALIAS(en_fr));
-// const struct device *const encoder_fl = DEVICE_DT_GET(DT_ALIAS(en_fl));
-
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id)                                                                \
 	{.dev_spec = PWM_DT_SPEC_GET(pwm_dev_id),                                                  \
@@ -51,7 +47,7 @@ struct DiffDriveTwist TIMEOUT_CMD = {
 int sbus_parsing() {
 	uint8_t packet[25],packet_pos=0,start = 0x0F, end = 0x00, message=0;
 
-	k_msgq_get(&uart_msgq, &message,K_MSEC(4));
+	k_msgq_get(&uart_msgq, &message, K_MSEC(4));
 
 	if(message == start) 
 	{

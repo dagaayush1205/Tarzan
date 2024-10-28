@@ -80,6 +80,9 @@
 	aliases {
 			debug-uart = &usart2;
 			mother-uart = &usart6;
+      stepper-motor1 = &stepper_motor_1; 
+			stepper-motor2 = &stepper_motor_2; 
+			stepper-motor3 = &stepper_motor_3;
 	};
     chosen {
             zephyr,console = &usart2;
@@ -167,4 +170,35 @@
 		pinctrl-0 = <&tim15_ch1_pc12 &tim15_ch1n_pe4 &tim15_ch1_pe5 &tim15_ch2_pe6>;
 		pinctrl-names = "default"; 
   };
+};
+&timers16 { 
+	status = "okay"; 
+	st,prescaler = <5599>; 
+
+	pwm16: pwm { 
+		status = "okay"; 
+		pinctrl-0 = <&tim16_ch1n_pb6 &tim16_ch1_pb8 &tim16_ch1_pf6 &tim16_ch1n_pf8>;
+		pinctrl-names = "default"; 
+	};
+
+	steppermotors { 
+		compatible = "stepper-motors"; 
+		stepper_motor_1: motor_1 { 
+			label = "First link"; 
+			dir-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>; //D0 PB7 
+			step-gpios = <&gpioc 0 GPIO_ACTIVE_LOW>; //A1 PC0
+		};
+	
+		stepper_motor_2: motor_2 {
+			label = "Second Link"; 
+			dir-gpios = <&gpioc 3 GPIO_ACTIVE_LOW>; //A2
+			step-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>; //A3
+		};
+	
+		stepper_motor_3: motor_3 { 
+			label = "Turn Table";
+			dir-gpios = <&gpioc 2 GPIO_ACTIVE_LOW>; //A4
+			step-gpios = <&gpiof 7 GPIO_ACTIVE_LOW>; //A5
+		};
+	};
 };
