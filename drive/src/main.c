@@ -24,6 +24,22 @@ static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart
 
 struct pwm_motor motor[17] = {DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
 
+/* DT spec for stepper */
+const struct stepper_motor stepper[3] = {
+	{
+		.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), dir_gpios),
+		.step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), step_gpios)
+	},
+	{
+		.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), dir_gpios), 
+		.step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), step_gpios)
+	},
+	{
+		.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), dir_gpios), 
+		.step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), step_gpios)
+	}
+}; 
+
 // creating mssg queue to store data
 K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t), 250, 1);
 
