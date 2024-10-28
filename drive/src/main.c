@@ -16,15 +16,13 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
 static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart)); //debugger
 
-
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id) {                            \
 	.dev_spec = PWM_DT_SPEC_GET(pwm_dev_id),                 \
 	 .min_pulse = DT_PROP(pwm_dev_id, min_pulse),            \
 	 .max_pulse = DT_PROP(pwm_dev_id, max_pulse)},
 
-
-struct pwm_motor motor[13] = {DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
+struct pwm_motor motor[17] = {DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
 
 // creating mssg queue to store data
 K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t), 250, 1);
@@ -36,11 +34,15 @@ float wheel_velocity_range[] = {-10.0, 10.0};
 uint32_t pwm_range[] = {1120000, 1500000, 1880000};
 uint16_t channel_range[]= {0,2047};
 
-uint16_t *ch;
+uint16_t *ch; // to store sbus channels
 
+uint8_t packet[25]; // to store sbus packet
+
+// to get serial data using uart 
 void serial_cb(const struct device *dev, void *user_data) {
 	ARG_UNUSED(user_data);
-	uint8_t c;
+	uint8_t c,
+		start = 0x0F;
 	
 	if (!uart_irq_update(uart_dev)) 
 		return;
@@ -55,24 +57,8 @@ void serial_cb(const struct device *dev, void *user_data) {
 	}
 }
 
-int velocity_callback(const float *velocity_buffer, int buffer_len, int wheels_per_side) {
-	
-	if (buffer_len < wheels_per_side * 2) 
-		return 1;
-	
-	if (pwm_motor_write(&(motor[0]), velocity_pwm_interpolation(*(velocity_buffer), wheel_velocity_range, pwm_range))) {
-		LOG_ERR("Drive: Unable to write pwm pulse to Left");
-		return 1;
-	}
-	if (pwm_motor_write(&(motor[1]), velocity_pwm_interpolation(*(velocity_buffer + wheels_per_side), wheel_velocity_range, pwm_range))) {
-		LOG_ERR("Drive: Unable to write pwm pulse to Right");
-		return 1; 
-	} 
-	return 0;
-}
-
 int actuator_callback(int i, uint8_t channel) {
-	if(pwm_motor_write(&(motor[i]), one_hot_interpolation(channel, pwm_range, channel_range))) { 
+	if(pwm_motor_write(&(motor[i]), sbus_pwm_interpolation(channel, pwm_range, channel_range))) { 
 		LOG_ERR("Linear Actuator: Unable to write at linear actuator %d", i); 
 		return 1; 
 	}
@@ -85,7 +71,7 @@ int feedback_callback() {
 
 int main() {
 
-	int err,flag=0;
+	int err;
 	uint64_t drive_timestamp = 0;
 	uint64_t time_last_drive_update = 0;
 
