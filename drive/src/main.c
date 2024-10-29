@@ -96,7 +96,7 @@ int arm_joints(int motor, uint16_t ch, int pos) {
 	setSpeed(60);
 	// Stepper Motor Forward 
 	time = k_uptime_ticks(); 
-	if((time-last_time)>=stepIntervali+41){  
+	if((time-last_time)>=stepInterval+41){  
 		pos = Stepper_motor_write(&stepper[motor], ch, pos);  
 	}	
 		last_time = time; 
@@ -251,27 +251,6 @@ int arm_joints_write(int i, uint16_t ch){
 	}
 }
 
-//void arm_joints(int motor, uint16_t ch, int pos) {
-//
-//	setSpeed(2);
-//	// Stepper Motor Forward 
-//	if((ch>channel_range[1])) {
-//		time = k_uptime_ticks(); 
-//		if((time-last_time)>=i){  
-//			Stepper_motor_write(&stepper[motor], 1, pos))  
-//		}
-//			last_time = time; 
-//	}
-//	// Stepper Motor Backward
-//	else { 
-//		if(Stepper_motor_write(&stepper[motor], 2)) {
-//				printk("Unable to write motor command to Stepper %d", stepper[motor]);
-//				return 0; 
-//		}
-//	}
-//}
-
-
 int main(){
 	int err,i,flag=0;
 	uint64_t drive_timestamp = 0;
@@ -363,10 +342,7 @@ int main(){
 
         arm_joints_write(7, ch[7]); // ABox
 
-
-
-
-      if(ch[8] > 300)
+	if(ch[8] > 300)
       {
         cmd.angular_z = sbus_velocity_interpolation(ch[0], angular_velocity_range);
         cmd.linear_x = sbus_velocity_interpolation(ch[1], linear_velocity_range);
