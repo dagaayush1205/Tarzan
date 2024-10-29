@@ -96,7 +96,7 @@ int arm_joints(int motor, uint16_t ch, int pos) {
 	setSpeed(60);
 	// Stepper Motor Forward 
 	time = k_uptime_ticks(); 
-	if((time-last_time)>=stepInterval){  
+	if((time-last_time)>=stepIntervali+41){  
 		pos = Stepper_motor_write(&stepper[motor], ch, pos);  
 	}	
 		last_time = time; 
