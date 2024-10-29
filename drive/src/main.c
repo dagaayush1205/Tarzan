@@ -23,6 +23,20 @@ static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart
 
 struct pwm_motor motor[13] = {DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
 
+const struct stepper_motor stepper[3] = {
+	{
+		.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), dir_gpios),
+		.step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), step_gpios)
+	},
+	{
+		.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), dir_gpios), 
+		.step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), step_gpios)
+	},
+	{
+		.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), dir_gpios), 
+		.step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), step_gpios)
+	}
+}; 
 K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t), 250, 1);
 
 //struct mother_msg msg;
@@ -43,7 +57,57 @@ struct DiffDriveTwist TIMEOUT_CMD = {
 	.linear_x = 0,
 };
 
+void setSpeed(float speed){
+	if(speed = 0.0) 
+		stepInterval = 0.0;
+	else 
+		stepInterval = (1000000/speed);
+}
 
+int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd) { 
+	
+	if(cmd == 1) {
+		gpio_pin_set_dt(&(motor->dir), 1); 
+		pos +=1; //clockwise
+	}
+	else { 
+		gpio_pin_set_dt(&(motor->dir), 0); 
+		pos -=1;
+	}	//anticlockwise 
+	switch(pos & 0x03) { 
+		case 0: gpio_pin_set_dt(&(motor->step),0);	//(0b10&(1<<0))?1:0); 
+			break; 
+		case 1: gpio_pin_set_dt(&(motor->step),1);	//(0b11&(1<<0))?1:0);  
+			break; 
+		case 2: gpio_pin_set_dt(&(motor->step),1);	//(0b01&(1<<0))?1:0);  
+			break; 
+		case 3: gpio_pin_set_dt(&(motor->step),0);	//(0b00&(1<<0))?1:0); 
+			break;
+	}
+	return 0;
+}
+void arm_joints(int motor, uint16_t ch) {
+
+	setSpeed(2);
+	// Stepper Motor Forward 
+	if((ch>channel_range[1])) {
+		time = k_uptime_ticks(); 
+		if((time-last_time)>=i){  
+			if(Stepper_motor_write(&stepper[motor], 1)) { 
+				printk("Unable to write motor command to Stepper %d", stepper[motor]); 
+				return 0; 
+			}
+			last_time = time; 
+		}
+	}
+	// Stepper Motor Backward
+	else { 
+		if(Stepper_motor_write(&stepper[motor], 2)) {
+				printk("Unable to write motor command to Stepper %d", stepper[motor]);
+				return 0; 
+		}
+	}
+}
 int sbus_parsing() {
 	uint8_t packet[25],packet_pos=0,start = 0x0F, end = 0x00, message=0;
 
@@ -191,6 +255,53 @@ int arm_joints_write(int i, uint16_t ch){
 		return 1;
 	}
 }
+int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd) { 
+	
+	if(cmd == 1) {
+		gpio_pin_set_dt(&(motor->dir), 1); 
+		pos +=1; //clockwise
+	}
+	else { 
+		gpio_pin_set_dt(&(motor->dir), 0); 
+		pos -=1;
+	}	//anticlockwise 
+	switch(pos & 0x03) { 
+		case 0: gpio_pin_set_dt(&(motor->step),0);	//(0b10&(1<<0))?1:0); 
+			break; 
+		case 1: gpio_pin_set_dt(&(motor->step),1);	//(0b11&(1<<0))?1:0);  
+			break; 
+		case 2: gpio_pin_set_dt(&(motor->step),1);	//(0b01&(1<<0))?1:0);  
+			break; 
+		case 3: gpio_pin_set_dt(&(motor->step),0);	//(0b00&(1<<0))?1:0); 
+			break;
+	}
+	return 0;
+} 
+
+void arm_joints(int motor, uint16_t ch) {
+
+	setSpeed(2);
+	// Stepper Motor Forward 
+	if((ch>channel_range[1])) {
+		time = k_uptime_ticks(); 
+		if((time-last_time)>=i){  
+			if(Stepper_motor_write(&stepper[motor], 1)) { 
+				printk("Unable to write motor command to Stepper %d", stepper[motor]); 
+				return 0; 
+			}
+			last_time = time; 
+		}
+	}
+	// Stepper Motor Backward
+	else { 
+		if(Stepper_motor_write(&stepper[motor], 2)) {
+				printk("Unable to write motor command to Stepper %d", stepper[motor]);
+				return 0; 
+		}
+	}
+}
+
+
 int main(){
 	int err,i,flag=0;
 	uint64_t drive_timestamp = 0;
