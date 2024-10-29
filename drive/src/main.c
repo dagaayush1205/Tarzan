@@ -10,6 +10,8 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/logging/log.h>
 
+#define PULSE_PER_REV 6400
+#define MINUTES_TO_MICRO 60000000
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
@@ -46,11 +48,14 @@ float wheel_velocity_range[] = {-10.0, 10.0};
 uint32_t pwm_range[] = {1120000, 1880000};
 float la_speed_range[] = {-127.0, 127.0};
 float angle_range[] = {-270, 270};
-uint16_t channel_range[]={0,2047};
+uint16_t channel_range[]={0, 940, 2047};
 uint16_t* ch;
 
 /* Global ticks for encoders */
 //int64_t ticks_fr, ticks_fl;
+int pos1, pos2, pos3; 
+uint64_t time, last_time; 
+float stepInterval;
 
 struct DiffDriveTwist TIMEOUT_CMD = {
 	.angular_z = 0,
@@ -61,12 +66,12 @@ void setSpeed(float speed){
 	if(speed = 0.0) 
 		stepInterval = 0.0;
 	else 
-		stepInterval = (1000000/speed);
+		stepInterval = (1/3*PULSE_PER_REV*speed)*MINUTES_TO_MICRO;
 }
 
-int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd) { 
+int Stepper_motor_write(const struct stepper_motor *motor, uint16_t ch,int pos) { 
 	
-	if(cmd == 1) {
+	if(ch > channel_range[1]) {
 		gpio_pin_set_dt(&(motor->dir), 1); 
 		pos +=1; //clockwise
 	}
@@ -84,29 +89,19 @@ int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd) {
 		case 3: gpio_pin_set_dt(&(motor->step),0);	//(0b00&(1<<0))?1:0); 
 			break;
 	}
-	return 0;
+	return pos;
 }
-void arm_joints(int motor, uint16_t ch) {
+int arm_joints(int motor, uint16_t ch, int pos) {
 
-	setSpeed(2);
+	setSpeed(60);
 	// Stepper Motor Forward 
-	if((ch>channel_range[1])) {
-		time = k_uptime_ticks(); 
-		if((time-last_time)>=i){  
-			if(Stepper_motor_write(&stepper[motor], 1)) { 
-				printk("Unable to write motor command to Stepper %d", stepper[motor]); 
-				return 0; 
-			}
-			last_time = time; 
-		}
-	}
-	// Stepper Motor Backward
-	else { 
-		if(Stepper_motor_write(&stepper[motor], 2)) {
-				printk("Unable to write motor command to Stepper %d", stepper[motor]);
-				return 0; 
-		}
-	}
+	time = k_uptime_ticks(); 
+	if((time-last_time)>=stepInterval){  
+		pos = Stepper_motor_write(&stepper[motor], ch, pos);  
+	}	
+		last_time = time; 
+	
+	return pos;
 }
 int sbus_parsing() {
 	uint8_t packet[25],packet_pos=0,start = 0x0F, end = 0x00, message=0;
@@ -255,51 +250,26 @@ int arm_joints_write(int i, uint16_t ch){
 		return 1;
 	}
 }
-int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd) { 
-	
-	if(cmd == 1) {
-		gpio_pin_set_dt(&(motor->dir), 1); 
-		pos +=1; //clockwise
-	}
-	else { 
-		gpio_pin_set_dt(&(motor->dir), 0); 
-		pos -=1;
-	}	//anticlockwise 
-	switch(pos & 0x03) { 
-		case 0: gpio_pin_set_dt(&(motor->step),0);	//(0b10&(1<<0))?1:0); 
-			break; 
-		case 1: gpio_pin_set_dt(&(motor->step),1);	//(0b11&(1<<0))?1:0);  
-			break; 
-		case 2: gpio_pin_set_dt(&(motor->step),1);	//(0b01&(1<<0))?1:0);  
-			break; 
-		case 3: gpio_pin_set_dt(&(motor->step),0);	//(0b00&(1<<0))?1:0); 
-			break;
-	}
-	return 0;
-} 
 
-void arm_joints(int motor, uint16_t ch) {
-
-	setSpeed(2);
-	// Stepper Motor Forward 
-	if((ch>channel_range[1])) {
-		time = k_uptime_ticks(); 
-		if((time-last_time)>=i){  
-			if(Stepper_motor_write(&stepper[motor], 1)) { 
-				printk("Unable to write motor command to Stepper %d", stepper[motor]); 
-				return 0; 
-			}
-			last_time = time; 
-		}
-	}
-	// Stepper Motor Backward
-	else { 
-		if(Stepper_motor_write(&stepper[motor], 2)) {
-				printk("Unable to write motor command to Stepper %d", stepper[motor]);
-				return 0; 
-		}
-	}
-}
+//void arm_joints(int motor, uint16_t ch, int pos) {
+//
+//	setSpeed(2);
+//	// Stepper Motor Forward 
+//	if((ch>channel_range[1])) {
+//		time = k_uptime_ticks(); 
+//		if((time-last_time)>=i){  
+//			Stepper_motor_write(&stepper[motor], 1, pos))  
+//		}
+//			last_time = time; 
+//	}
+//	// Stepper Motor Backward
+//	else { 
+//		if(Stepper_motor_write(&stepper[motor], 2)) {
+//				printk("Unable to write motor command to Stepper %d", stepper[motor]);
+//				return 0; 
+//		}
+//	}
+//}
 
 
 int main(){
@@ -380,20 +350,20 @@ int main(){
 		else 
 		{
         drive_timestamp = k_uptime_get();
-        arm_joints_write(4, ch[4]); // turn-table
         
-        arm_joints_write(5, ch[5]); // Line 1(turn-table)
+	for(int i = 0 ; i < 16 ; i++)
+        {
+          printk("%d \t", ch[i]);
+	}
+        printk("\n");
 
-        arm_joints_write(6, ch[6]); // Link 2
+        pos1 = arm_joints(0, ch[4], pos1); // turn-table
+        pos2 = arm_joints(1, ch[5], pos2); // Line 1(turn-table)
+        pos3 = arm_joints(2, ch[6], pos3); // Link 2
 
         arm_joints_write(7, ch[7]); // ABox
 
 
-        for(int i = 0 ; i < 16 ; i++)
-        {
-          printk("%d \t", ch[i]);
-        }
-        printk("\n");
 
 
       if(ch[8] > 300)
