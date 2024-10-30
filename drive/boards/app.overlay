@@ -52,18 +52,6 @@
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
 		};
-		servo_3: pwm_11 {
-			pwms  = <&pwm12 1 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
-			min-pulse = <PWM_USEC(1100)>;
-			max-pulse = <PWM_USEC(1900)>;
-		};
-
-		extra_1: pwm_12 {
-			pwms = <&pwm12 2 PWM_MSEC(20)  (PWM_POLARITY_NORMAL)>;
-			min-pulse = <PWM_USEC(1100)>;
-			max-pulse = <PWM_USEC(1900)>;
-		};
-
 		extra_2: pwm_13 {
 			pwms = <&pwm13 1 PWM_MSEC(20)  (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
@@ -102,6 +90,21 @@
 		};
 		extra_9: pwm_20 {
 			pwms = <&pwm16 4 PWM_MSEC(20)  (PWM_POLARITY_NORMAL)>;
+			min-pulse = <PWM_USEC(1100)>;
+			max-pulse = <PWM_USEC(1900)>;
+		};
+		extra_10: pwm_21 {
+			pwms = <&pwm1 1 PWM_MSEC(20)  (PWM_POLARITY_NORMAL)>;
+			min-pulse = <PWM_USEC(1100)>;
+			max-pulse = <PWM_USEC(1900)>;
+		};
+		extra_11: pwm_22 { 
+			pwms = <&pwm1 2 PWM_MSEC(20)  (PWM_POLARITY_NORMAL)>;
+			min-pulse = <PWM_USEC(1100)>;
+			max-pulse = <PWM_USEC(1900)>;
+		};
+		extra_12: pwm_23 { 
+			pwms = <&pwm1 3 PWM_MSEC(20)  (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
 		};
@@ -146,13 +149,24 @@
 	};
 };
 
+&timers1{
+	status = "okay";
+	st,prescaler = <5599>; 
+
+	pwm1: pwm {
+		status = "okay";
+		pinctrl-0 = <&tim1_ch1n_pa7 &tim1_ch1_pa8 &tim1_ch2_pa9>;
+		pinctrl-names = "default"; 
+	};
+};
+
 &timers2 {
 	status = "okay";
 	st,prescaler = <5599>;
 
 	pwm2: pwm {
 		status = "okay";
-		pinctrl-0 = <&tim2_ch1_pa0 &tim2_ch2_pa1 &tim2_ch3_pa2 &tim2_ch4_pa3>;
+		pinctrl-0 = <&tim2_ch1_pa0 &tim2_ch2_pa1 &tim2_ch3_pa2 &tim2_ch4_pa3 &tim2_ch1_pa5>;
 		pinctrl-names = "default";
 	};
 };
