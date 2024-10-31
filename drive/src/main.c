@@ -10,8 +10,8 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/logging/log.h>
 
-#define PULSE_PER_REV 6400
-#define MINUTES_TO_MICRO 60000000
+#define PULSE_PER_REV 6400.0
+#define MINUTES_TO_SEC 60.0
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
@@ -63,10 +63,10 @@ struct DiffDriveTwist TIMEOUT_CMD = {
 };
 
 void setSpeed(float speed){
-	if(speed = 0.0) 
+	if(speed == 0.0) 
 		stepInterval = 0.0;
 	else 
-		stepInterval = (1/3*PULSE_PER_REV*speed)*MINUTES_TO_MICRO;
+		stepInterval = CONFIG_SYS_CLOCK_TICKS_PER_SEC*MINUTES_TO_SEC/(PULSE_PER_REV*speed);
 }
 
 int Stepper_motor_write(const struct stepper_motor *motor, uint16_t ch,int pos) { 
@@ -80,23 +80,24 @@ int Stepper_motor_write(const struct stepper_motor *motor, uint16_t ch,int pos) 
 		pos -=1;
 	}	//anticlockwise 
 	switch(pos & 0x03) { 
-		case 0: gpio_pin_set_dt(&(motor->step),0);	//(0b10&(1<<0))?1:0); 
+		case 0: gpio_pin_set_dt(&(motor->step),0); 
 			break; 
-		case 1: gpio_pin_set_dt(&(motor->step),1);	//(0b11&(1<<0))?1:0);  
+		case 1: gpio_pin_set_dt(&(motor->step),1);
 			break; 
-		case 2: gpio_pin_set_dt(&(motor->step),1);	//(0b01&(1<<0))?1:0);  
+		case 2: gpio_pin_set_dt(&(motor->step),1);
 			break; 
-		case 3: gpio_pin_set_dt(&(motor->step),0);	//(0b00&(1<<0))?1:0); 
+		case 3: gpio_pin_set_dt(&(motor->step),0);
 			break;
 	}
 	return pos;
 }
 int arm_joints(int motor, uint16_t ch, int pos) {
 
-	setSpeed(60);
+	setSpeed(500000.0);
 	// Stepper Motor Forward 
-	time = k_uptime_ticks(); 
-	if((time-last_time)>=stepInterval+41){  
+	time = k_uptime_ticks();
+	printk("%"PRIu64"\n", (time-last_time));
+	if((time-last_time)>=stepInterval){  
 		pos = Stepper_motor_write(&stepper[motor], ch, pos);  
 	}	
 		last_time = time; 
@@ -113,9 +114,8 @@ int sbus_parsing() {
 		for(packet_pos = 0; packet_pos < 25; packet_pos++) 
 		{
 			packet[packet_pos] = message;
-			k_msgq_get(&uart_msgq, &message,K_MSEC(4));
+			k_msgq_get(&uart_msgq, &message,K_NO_WAIT);
 		}
-		LOG_INF("%o %o %o",packet[0],packet[23], packet[24]);
 		ch = parse_buffer(packet);
 		return 1;
 	} 
@@ -252,7 +252,7 @@ int arm_joints_write(int i, uint16_t ch){
 }
 
 int main(){
-	int err,i,flag=0;
+	int err,i,flag=0, c =1200;
 	uint64_t drive_timestamp = 0;
 	uint64_t time_last_drive_update = 0;
 
@@ -272,10 +272,10 @@ int main(){
             .linear_x = 0,
 	};
 
-	if (!device_is_ready(uart_dev)) 
-	{
-		LOG_ERR("UART device not ready");
-	}
+      if (!device_is_ready(uart_dev)) 
+      {
+      	LOG_ERR("UART device not ready");
+      }
 
 	for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) 
 	{
@@ -284,8 +284,7 @@ int main(){
 			LOG_ERR("PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
 		}
 	}
-// 	Interrupt
-	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
+//	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
 	
 	if(err<0)
 	{
@@ -304,7 +303,7 @@ int main(){
 	}
 
 
-	uart_irq_rx_enable(uart_dev);
+//	uart_irq_rx_enable(uart_dev);
 	
 	struct DiffDrive *drive = diffdrive_init(&drive_config, feedback_callback, velocity_callback);	
 
@@ -316,11 +315,47 @@ int main(){
 		}
 	}
 
-	printk("Initialization completed successfully!");
 	
+	if(err<0) {
+		if (err == -ENOTSUP) 
+			printk("Interrupt-driven UART API support not enabled");
+		 
+		else if (err == -ENOSYS) 
+			printk("UART device does not support interrupt-driven API");
+		
+		else 
+			printk("Error setting UART callback: %d", err);
+		
+	}
+	
+	for(size_t i = 0U; i < 3; i++) { 
+		if(!gpio_is_ready_dt(&stepper[i].dir)) {
+			printk("Stepper Motor %d: Dir %d is not ready\n", i, stepper[i].dir.pin);
+			return 0; 
+		}
+		if(!gpio_is_ready_dt(&stepper[i].step)) {
+			printk("Stepper Motor %d: Dir %d is not ready\n", i, stepper[i].step.pin);
+			return 0; 
+		}
+	}
+	
+	for (size_t i = 0U; i < 3; i++) {
+		if(gpio_pin_configure_dt(&(stepper[i].dir), GPIO_OUTPUT_INACTIVE)) {
+			printk("Error: Stepper motor %d: Dir %d not configured", i,
+							stepper[i].dir.pin);
+			return 0;
+		}
+		if(gpio_pin_configure_dt(&(stepper[i].step), GPIO_OUTPUT_INACTIVE)) {
+			printk("Error: Stepper motor %d: Dir %d not configured", i,
+							stepper[i].step.pin);
+			return 0;
+		}	
+	}
+
+	printk("Initialization completed successfully!");
+
 	while(true)
 	{
-// 		parse uart data return 1 if start bit not found
 		flag=sbus_parsing();
 		if(flag == 0)
 		{
@@ -328,42 +363,42 @@ int main(){
 		}
 		else 
 		{
-        drive_timestamp = k_uptime_get();
-        
+      drive_timestamp = k_uptime_get();
+      
 	for(int i = 0 ; i < 16 ; i++)
         {
           printk("%d \t", ch[i]);
 	}
         printk("\n");
 
-        pos1 = arm_joints(0, ch[4], pos1); // turn-table
+      	pos1 = arm_joints(0, ch[4], pos1); // turn-table
         pos2 = arm_joints(1, ch[5], pos2); // Line 1(turn-table)
-        pos3 = arm_joints(2, ch[6], pos3); // Link 2
+       	pos3 = arm_joints(2, ch[6], pos3); // Link 2
 
-        arm_joints_write(7, ch[7]); // ABox
+        arm_joints_write(7, ch[8]); // ABox
 
 	if(ch[8] > 300)
-      {
-        cmd.angular_z = sbus_velocity_interpolation(ch[0], angular_velocity_range);
-        cmd.linear_x = sbus_velocity_interpolation(ch[1], linear_velocity_range);
+	{
+		cmd.angular_z = sbus_velocity_interpolation(ch[0], angular_velocity_range);
+		cmd.linear_x = sbus_velocity_interpolation(ch[1], linear_velocity_range);
 
-        err = diffdrive_update(drive, cmd, time_last_drive_update);
-        
-        linear_actuator_write(2, ch[2]);
-        linear_actuator_write(3, ch[3]);
+		err = diffdrive_update(drive, cmd, time_last_drive_update);
 
-      }
-      else{
-        arm_joints_write(8, ch[0]); // Y of YPR
-        arm_joints_write(9, ch[1]); // P of YPR
-        
-        arm_joints_write(10, ch[2]); //Gripper1
-        arm_joints_write(13, ch[3]); //Gripper2
-        arm_joints_write(14, ch[8]); //R of YPR
+		linear_actuator_write(2, ch[2]);
+		linear_actuator_write(3, ch[3]);
 
-      }
-  		time_last_drive_update = k_uptime_get() - drive_timestamp;
-    }
+	}
+	else{
+		arm_joints_write(8, ch[0]); // Y of YPR
+		arm_joints_write(9, ch[1]); // P of YPR
 
+		arm_joints_write(10, ch[2]); //Gripper1
+		arm_joints_write(13, ch[3]); //Gripper2
+		arm_joints_write(14, ch[8]); //R of YPR
+
+	}
+	time_last_drive_update = k_uptime_get() - drive_timestamp;
+
+	}
 	}
 }
