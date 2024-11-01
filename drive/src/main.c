@@ -25,7 +25,7 @@ static const struct device *const uart_debug =
    .min_pulse = DT_PROP(pwm_dev_id, min_pulse),                                \
    .max_pulse = DT_PROP(pwm_dev_id, max_pulse)},
 
-struct pwm_motor motor[13] = {
+struct pwm_motor motor[15] = {
     DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
 
 const struct stepper_motor stepper[3] = {
@@ -89,13 +89,13 @@ int arm_joints(int motor, uint16_t ch, int pos) {
 
   setSpeed(500000.0);
   // Stepper Motor Forward
+  while(true) {
   time = k_uptime_ticks();
-  //printk("%" PRIu64 "\n", (time - last_time));
-  if ((time - last_time) >= stepInterval) {
+  if ((time - last_time) >= 25) {
     pos = Stepper_motor_write(&stepper[motor], ch, pos);
-  }
   last_time = time;
-
+  }
+  }
   return pos;
 }
 int sbus_parsing() {
@@ -232,7 +232,8 @@ int arm_joints_write(int i, uint16_t ch) {
 }
 
 int main() {
-  int err, i, flag = 0, c = 1200;
+  int err, i, flag = 0;
+  uint16_t c = 1200;
   uint64_t drive_timestamp = 0;
   uint64_t time_last_drive_update = 0;
 
@@ -328,14 +329,14 @@ int main() {
     } else {
       drive_timestamp = k_uptime_get();
 
-      for (int i = 0; i < 8; i++) {
+      for (int i = 0; i < 10; i++) {
         printk("%d \t", ch[i]);
       }
       printk("\n");
 
-      pos1 = arm_joints(0, ch[4], pos1); // turn-table
+    pos1 = arm_joints(0, c, pos1); // turn-table
       pos2 = arm_joints(1, ch[5], pos2); // Line 1(turn-table)
-      pos3 = arm_joints(2, ch[6], pos3); // Link 2
+     pos3 = arm_joints(2, ch[6], pos3); // Link 2
 
       arm_joints_write(7, ch[7]); // ABox
 
@@ -354,7 +355,7 @@ int main() {
         arm_joints_write(8, ch[0]); // Y of YPR
         arm_joints_write(9, ch[1]); // P of YPR
 
-        arm_joints_write(10, ch[2]); // Gripper1
+        arm_joints_write(12, ch[2]); // Gripper1
         arm_joints_write(13, ch[3]); // Gripper2
         arm_joints_write(14, ch[9]); // R of YPR
       }
