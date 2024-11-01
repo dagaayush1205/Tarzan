@@ -233,7 +233,6 @@ int arm_joints_write(int i, uint16_t ch) {
 
 int main() {
   int err, i, flag = 0;
-  uint16_t c = 1200;
   uint64_t drive_timestamp = 0;
   uint64_t time_last_drive_update = 0;
 
@@ -334,9 +333,9 @@ int main() {
       }
       printk("\n");
 
-    pos1 = arm_joints(0, c, pos1); // turn-table
+      pos1 = arm_joints(0, ch[4], pos1); // turn-table
       pos2 = arm_joints(1, ch[5], pos2); // Line 1(turn-table)
-     pos3 = arm_joints(2, ch[6], pos3); // Link 2
+      pos3 = arm_joints(2, ch[6], pos3); // Link 2
 
       arm_joints_write(7, ch[7]); // ABox
 
