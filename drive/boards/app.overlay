@@ -208,10 +208,10 @@
 	status = "okay";
 	st,prescaler = <83>;
 	counter0: counter {
-		status = "okay";
+		status = "disabled";
 	};
 	pwm13: pwm {
-		status = "disabled";
+		status = "okay";
 		pinctrl-0 = <&tim13_ch1_pa6>;
 		pinctrl-names = "default";
 	};
