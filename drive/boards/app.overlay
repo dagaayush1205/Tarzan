@@ -71,8 +71,23 @@
 			max-pulse = <PWM_USEC(1900)>;
 		};
 
-    extra_3: pwm_14 {
+		    extra_3: pwm_14 {
 			pwms = <&pwm15 1 PWM_MSEC(20)  (PWM_POLARITY_NORMAL)>;
+			min-pulse = <PWM_USEC(1100)>;
+			max-pulse = <PWM_USEC(1900)>;
+		};
+		    extra_4: pwm_15 {
+			pwms = <&pwm15 2 PWM_MSEC(20)  (PWM_POLARITY_NORMAL)>;
+			min-pulse = <PWM_USEC(1100)>;
+			max-pulse = <PWM_USEC(1900)>;
+		};
+		    extra_4: pwm_16 {
+			pwms = <&pwm15 3 PWM_MSEC(20)  (PWM_POLARITY_NORMAL)>;
+			min-pulse = <PWM_USEC(1100)>;
+			max-pulse = <PWM_USEC(1900)>;
+		};
+		    extra_4: pwm_17 {
+			pwms = <&pwm15 4 PWM_MSEC(20)  (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
 		};
