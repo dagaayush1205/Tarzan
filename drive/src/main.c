@@ -22,7 +22,7 @@ static const struct device *const uart_debug = DEVICE_DT_GET(DT_ALIAS(debug_uart
 	 .min_pulse = DT_PROP(pwm_dev_id, min_pulse),            \
 	 .max_pulse = DT_PROP(pwm_dev_id, max_pulse)},
 
-struct pwm_motor motor[17] = {DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
+struct pwm_motor motor[21] = {DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
 
 /* DT spec for stepper */
 const struct stepper_motor stepper[3] = {
@@ -77,6 +77,27 @@ int actuator_callback(int i, uint8_t channel) {
 	if(pwm_motor_write(&(motor[i]), sbus_pwm_interpolation(channel, pwm_range, channel_range))) { 
 		LOG_ERR("Linear Actuator: Unable to write at linear actuator %d", i); 
 		return 1; 
+	}
+	return 0;
+}
+
+int velocity_callback(const float *velocity_buffer, int buffer_len, int wheels_per_side)
+{
+	if (buffer_len < wheels_per_side * 2) 
+	{
+		return 1;
+	}
+
+	const int i = 0;
+	if (pwm_motor_write(&(motor[i]), velocity_pwm_interpolation(*(velocity_buffer + i), wheel_velocity_range, pwm_range))) 
+	{
+		printk("Drive: Unable to write pwm pulse to Left : %d", i);
+		return 1;
+	}
+	if (pwm_motor_write(&(motor[i + 1]), velocity_pwm_interpolation(*(velocity_buffer + wheels_per_side + i), wheel_velocity_range, pwm_range))) 
+	{
+		printk("Drive: Unable to write pwm pulse to Right : %d", i);
+		return 1;
 	}
 	return 0;
 }
