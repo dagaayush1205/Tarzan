@@ -90,7 +90,7 @@ int arm_joints(int motor, uint16_t ch, int pos) {
   setSpeed(500000.0);
   // Stepper Motor Forward
   time = k_uptime_ticks();
-  printk("%" PRIu64 "\n", (time - last_time));
+  //printk("%" PRIu64 "\n", (time - last_time));
   if ((time - last_time) >= stepInterval) {
     pos = Stepper_motor_write(&stepper[motor], ch, pos);
   }
@@ -324,7 +324,6 @@ int main() {
   while (true) {
     flag = sbus_parsing();
     if (flag == 0) {
-      // printk("parse error\n");
       continue;
     } else {
       drive_timestamp = k_uptime_get();
@@ -338,9 +337,9 @@ int main() {
       pos2 = arm_joints(1, ch[5], pos2); // Line 1(turn-table)
       pos3 = arm_joints(2, ch[6], pos3); // Link 2
 
-      arm_joints_write(7, ch[8]); // ABox
+      arm_joints_write(7, ch[7]); // ABox
 
-      if (ch[8] > 300) {
+      if (ch[8] > 992) {
         cmd.angular_z =
             sbus_velocity_interpolation(ch[0], angular_velocity_range);
         cmd.linear_x =
@@ -357,7 +356,7 @@ int main() {
 
         arm_joints_write(10, ch[2]); // Gripper1
         arm_joints_write(13, ch[3]); // Gripper2
-        arm_joints_write(14, ch[8]); // R of YPR
+        arm_joints_write(14, ch[9]); // R of YPR
       }
       time_last_drive_update = k_uptime_get() - drive_timestamp;
     }
