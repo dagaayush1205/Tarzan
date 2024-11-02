@@ -47,12 +47,12 @@ float stepInterval;
 int sbus_parsing() {
   uint8_t packet[25], packet_pos = 0, start = 0x0f, message = 0;
 
-  k_msgq_get(&uart_msgq, &message, K_NO_WAIT);
+  k_msgq_get(&uart_msgq, &message, K_MSEC(4));
 
   if (message == start) {
     for (packet_pos = 0; packet_pos < 25; packet_pos++) {
       packet[packet_pos] = message;
-      k_msgq_get(&uart_msgq, &message, K_NO_WAIT);
+      k_msgq_get(&uart_msgq, &message, K_MSEC(4));
     }
     ch = parse_buffer(packet);
     return 1;
@@ -112,18 +112,24 @@ int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd, int pos
   return pos;
 } 
 
-void arm_joints(uint16_t cmd[2]) {
-//  setSpeed(500000.0);
+void arm_joints(struct k_work *work) {
+  uint16_t cmd[2] = {ch[0], ch[1]};
+ // printk("%4d %4d\n",cmd[0],cmd[1]);
+  setSpeed(500000.0);
   for(int i=0;i<2;i++){
- 	 time[i] = k_uptime_ticks();
-  	//printk("%"PRIu64"\n",(time[0]-last_time[0]));
-  	 if ((time[i] - last_time[i]) >= 1) {
+ //	 time[i] = k_uptime_ticks();
+  //	 if ((time[i] - last_time[i]) >= 1) {
    		 pos[i] = Stepper_motor_write(&stepper[i], cmd[i], pos[i]);
-  		 last_time[i] = time[i];
-  	}
+  //		 last_time[i] = time[i];
+  //	}
     }
 }
+K_WORK_DEFINE(my_work, arm_joints);
 
+void my_timer_handler(struct k_timer *dummy){
+	k_work_submit(&my_work);
+}
+K_TIMER_DEFINE(my_timer, my_timer_handler, NULL);
 int main() {
 
 	int err, flag;
@@ -181,23 +187,20 @@ int main() {
 			return 0;
 		}	
 	}
-
-	LOG_INF("Initialization completed successfully!");
+	k_timer_start(&my_timer, K_USEC(60), K_USEC(10));
+	printk("Initialization completed successfully!");
 	while(true)
 	{
-	t = k_uptime_ticks();
-	   printk("%"PRIu64"\n",(t-last));
 	      flag = sbus_parsing(); 
 	      if(flag ==0){
-	      	printk("error");
+	      //	printk("error");
 	      	continue;
 	      }
 	      else {
-	//	   for(int i=0;i<3;i++) printk("%d\t",ch[i]);
-	//	   printk("\n");
-		   arm_joints(ch);
+		   for(int i=0;i<3;i++) printk("%d\t",ch[i]);
+		   printk("\n");
+	//         arm_joints(ch);
 	
-		}
-	last = t; 
-   }
+	      }
+	} 
 }
