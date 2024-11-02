@@ -8,6 +8,7 @@
 
 #include <kyvernitis/lib/kyvernitis.h>
 
+#include "sbus_parse.c"
 //#include <Tarzan/lib/sbus.h>
 //#include <Tarzan/lib/drive.h>
 
@@ -40,26 +41,41 @@ uint16_t channel_range[]= {0,950, 2047};
 uint16_t *ch;
 uint8_t packet[25];
 int pos = 0;
-uint64_t time, last_time=0.0;
+uint64_t time[3], last_time[3];
 float stepInterval;
-void serial_cb(const struct device *dev, void *user_data) {
-	ARG_UNUSED(user_data);
-	uint8_t start= 0x0F; 
-	uint8_t c;
 
-	if (!uart_irq_update(uart_dev)) 
-		return;
-	if (!uart_irq_rx_ready(uart_dev)) 
-		return;
+int sbus_parsing() {
+  uint8_t packet[25], packet_pos = 0, start = 0x0f, message = 0;
 
-	while (uart_fifo_read(uart_dev, &c, 1) == 1) {
-		if(c != start) continue; 
-		packet[0] = c; 
-		if(uart_fifo_read(uart_dev, packet+1, 24) == 24)  
-			k_msgq_put(&uart_msgq, packet, K_NO_WAIT);
-	}
+  k_msgq_get(&uart_msgq, &message, K_MSEC(4));
+
+  if (message == start) {
+    for (packet_pos = 0; packet_pos < 25; packet_pos++) {
+      packet[packet_pos] = message;
+      k_msgq_get(&uart_msgq, &message, K_MSEC(4));
+    }
+    ch = parse_buffer(packet);
+    return 1;
+  } else {
+    return 0;
+  }
 }
 
+void serial_cb(const struct device *dev, void *user_data) {
+  uint8_t c;
+
+  if (!uart_irq_update(uart_dev)) {
+    return;
+  }
+
+  if (!uart_irq_rx_ready(uart_dev)) {
+    return;
+  }
+
+  while (uart_fifo_read(uart_dev, &c, 1) == 1) {
+    k_msgq_put(&uart_msgq, &c, K_NO_WAIT); // put message from UART to queue
+  }
+}
 void setSpeed(float speed){
 	if(speed == 0.0) 
 		stepInterval = 0.0;
@@ -82,7 +98,7 @@ int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd) {
 			break; 
 		case 1: gpio_pin_set_dt(&(motor->step),1);	//(0b11&(1<<0))?1:0);  
 			break; 
-		case 2: gpio_pin_set_dt(&(motor->step),1);	//(0b01&(1<<0))?1:0);  
+case 2: gpio_pin_set_dt(&(motor->step),1);	//(0b01&(1<<0))?1:0);  
 			break; 
 		case 3: gpio_pin_set_dt(&(motor->step),0);	//(0b00&(1<<0))?1:0); 
 			break;
@@ -90,26 +106,28 @@ int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd) {
 	return 0;
 } 
 
-void arm_joints(int motor, uint16_t ch) {
+void arm_joints() {
 
-	setSpeed(5000000.0);
+	//setSpeed(5000000.0);
+	for(int i=0;i<3;i++){
 	// Stepper Motor Forward 
-	if((ch>channel_range[1])) {
-		time = k_uptime_ticks(); 
-		if((time-last_time)>=50){
-			if(Stepper_motor_write(&stepper[motor], 1)) { 
-				printk("Unable to write motor command to Stepper %d", stepper[motor]); 
+	if((ch[i]>channel_range[1])) {
+		time[i] = k_uptime_ticks(); 
+		if((time[i]-last_time[i])>=50){
+			if(Stepper_motor_write(&stepper[i], 1)) { 
+				printk("Unable to write motor command to Stepper %d",i); 
 				return 0; 
 			}
-			last_time = time; 
+			last_time[i] = time[i]; 
 		}
 	}
 	// Stepper Motor Backward
 	else { 
-		if(Stepper_motor_write(&stepper[motor], 2)) {
-				printk("Unable to write motor command to Stepper %d", stepper[motor]);
+		if(Stepper_motor_write(&stepper[i], 2)) {
+				printk("Unable to write motor command to Stepper %d", i);
 				return 0; 
 		}
+	}
 	}
 }
 
@@ -118,26 +136,35 @@ int main() {
 	int err;
 	uint16_t c = 2000;
 
-	// device ready chceks
-	if (!device_is_ready(uart_dev)) {
-		printk("UART device not ready");
-	}
+  if (!device_is_ready(uart_dev)) {
+    LOG_ERR("UART device not ready");
+  }
 
-	// Interrupt to get sbus data
-	err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
-	
-	if(err<0) {
-		if (err == -ENOTSUP) 
-			printk("Interrupt-driven UART API support not enabled");
-		 
-		else if (err == -ENOSYS) 
-			printk("UART device does not support interrupt-driven API");
-		
-		else 
-			printk("Error setting UART callback: %d", err);
-		
-	}
-	
+  err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
+
+  if (err < 0) {
+    if (err == -ENOTSUP) {
+      printk("Interrupt-driven UART API support not enabled");
+    } else if (err == -ENOSYS) {
+      printk("UART device does not support interrupt-driven API");
+    } else {
+      printk("Error setting UART callback: %d", err);
+    }
+  }
+
+  if (err < 0) {
+    if (err == -ENOTSUP)
+      printk("Interrupt-driven UART API support not enabled");
+
+    else if (err == -ENOSYS)
+      printk("UART device does not support interrupt-driven API");
+
+    else
+      printk("Error setting UART callback: %d", err);
+  }
+
+  uart_irq_rx_enable(uart_dev);
+
 	for(size_t i = 0U; i < 3; i++) { 
 		if(!gpio_is_ready_dt(&stepper[i].dir)) {
 			printk("Stepper Motor %d: Dir %d is not ready\n", i, stepper[i].dir.pin);
@@ -162,9 +189,6 @@ int main() {
 		}	
 	}
 
-	// enable uart device for communication
-//	uart_irq_rx_enable(uart_dev);
-	
 	LOG_INF("Initialization completed successfully!");
 	
 	while(true)
@@ -174,7 +198,9 @@ int main() {
 	//	ch = parse_buffer(packet); 
 
 		// first link 
-		arm_joints(0, c);
+		arm_joints();
+	//	arm_joints(1, c);
+	//	arm_joints(2, c);
 
 	}
 }
