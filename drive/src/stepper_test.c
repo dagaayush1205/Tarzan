@@ -40,7 +40,7 @@ uint16_t channel_range[]= {0,950, 2047};
 
 uint16_t *ch;
 uint8_t packet[25];
-int pos = 0;
+int pos[3] ={ 0};
 uint64_t time[3], last_time[3];
 float stepInterval;
 
@@ -83,52 +83,42 @@ void setSpeed(float speed){
 		stepInterval = (60000000.0/(6400.0*speed*3.0));
 }
 
-int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd) { 
+int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd, int pos) { 
 	
-	if(cmd == 1) {
-		gpio_pin_set_dt(&(motor->dir), 1); 
-		pos +=1; //clockwise
-	}
-	else { 
-		gpio_pin_set_dt(&(motor->dir), 0); 
-		pos -=1;
-	}	//anticlockwise 
-	switch(pos & 0x03) { 
-		case 0: gpio_pin_set_dt(&(motor->step),0);	//(0b10&(1<<0))?1:0); 
-			break; 
-		case 1: gpio_pin_set_dt(&(motor->step),1);	//(0b11&(1<<0))?1:0);  
-			break; 
-case 2: gpio_pin_set_dt(&(motor->step),1);	//(0b01&(1<<0))?1:0);  
-			break; 
-		case 3: gpio_pin_set_dt(&(motor->step),0);	//(0b00&(1<<0))?1:0); 
-			break;
-	}
-	return 0;
+  if (ch > channel_range[1]) {
+    gpio_pin_set_dt(&(motor->dir), 1);
+    pos += 1; // clockwise
+  } else {
+    gpio_pin_set_dt(&(motor->dir), 0);
+    pos -= 1;
+  } // anticlockwise
+  switch (pos & 0x03) {
+  case 0:
+    gpio_pin_set_dt(&(motor->step), 0);
+    break;
+  case 1:
+    gpio_pin_set_dt(&(motor->step), 1);
+    break;
+  case 2:
+    gpio_pin_set_dt(&(motor->step), 1);
+    break;
+  case 3:
+    gpio_pin_set_dt(&(motor->step), 0);
+    break;
+  }
+  return pos;
 } 
 
 void arm_joints() {
-
-	//setSpeed(5000000.0);
-	for(int i=0;i<3;i++){
-	// Stepper Motor Forward 
-	if((ch[i]>channel_range[1])) {
-		time[i] = k_uptime_ticks(); 
-		if((time[i]-last_time[i])>=50){
-			if(Stepper_motor_write(&stepper[i], 1)) { 
-				printk("Unable to write motor command to Stepper %d",i); 
-				return 0; 
-			}
-			last_time[i] = time[i]; 
-		}
-	}
-	// Stepper Motor Backward
-	else { 
-		if(Stepper_motor_write(&stepper[i], 2)) {
-				printk("Unable to write motor command to Stepper %d", i);
-				return 0; 
-		}
-	}
-	}
+//  setSpeed(500000.0);
+  // Stepper Motor Forward
+  for(int i=0;i<3;i++){
+  time[i] = k_uptime_ticks();
+  if ((time[i] - last_time[i]) >= 25) {
+    pos[i] = Stepper_motor_write(&stepper[i], ch, pos[i]);
+  last_time[i] = time[i];
+  	}
+  }
 }
 
 int main() {
@@ -193,9 +183,9 @@ int main() {
 	
 	while(true)
 	{
-	//	k_msgq_get(&uart_msgq, &packet, K_NO_WAIT);
+		k_msgq_get(&uart_msgq, &packet, K_NO_WAIT);
 		
-	//	ch = parse_buffer(packet); 
+		ch = parse_buffer(packet); 
 
 		// first link 
 		arm_joints();
