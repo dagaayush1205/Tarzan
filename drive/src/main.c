@@ -44,11 +44,11 @@ float wheel_velocity_range[] = {-10.0, 10.0};
 uint32_t pwm_range[] = {1120000, 1880000};
 float la_speed_range[] = {-127.0, 127.0};
 float angle_range[] = {-270, 270};
-uint16_t channel_range[] = {0, 940, 2047};
+uint16_t channel_range[] = {0, 950, 2047};
 uint16_t *ch;
 
 int pos1, pos2, pos3;     // record position of each stepper
-uint64_t time, last_time; // record time for stepper pulse
+uint64_t last_time[2]; // record time for stepper pulse
 float stepInterval;       // time interval for each pulse
 
 void setSpeed(float speed) {
@@ -59,9 +59,10 @@ void setSpeed(float speed) {
                    (PULSE_PER_REV * speed);
 }
 
-int Stepper_motor_write(const struct stepper_motor *motor, uint16_t ch,
-                        int pos) {
+int Stepper_motor_write(const struct stepper_motor *motor, uint16_t ch				,int pos) {
 
+  if(abs(ch-channel_range[1])<200) {
+		  return pos;}
   if (ch > channel_range[1]) {
     gpio_pin_set_dt(&(motor->dir), 1);
     pos += 1; // clockwise
@@ -85,18 +86,23 @@ int Stepper_motor_write(const struct stepper_motor *motor, uint16_t ch,
   }
   return pos;
 }
-int arm_joints(int motor, uint16_t ch, int pos) {
-
+void arm_joints(struct k_work *work) {
+  uint16_t cmd[2] = {ch[0], ch[1]};
+  int pos[2]; 
   setSpeed(500000.0);
-  // Stepper Motor Forward
-  time = k_uptime_ticks();
-  if ((time - last_time) >= 25) {
-    pos = Stepper_motor_write(&stepper[motor], ch, pos);
-  last_time = time;
+  for(int i=0;i<2;i++){
+    pos[i] = Stepper_motor_write(&stepper[i],
+		    	      cmd[i], pos[i]);
+   // last_time[i] = time[i];
   }
-  
-  return pos;
 }
+K_WORK_DEFINE(my_work, arm_joints);
+
+void my_timer_handler(struct k_timer *dummy){
+	k_work_submit(&my_work);
+}
+K_TIMER_DEFINE(my_timer, my_timer_handler, NULL);
+
 int sbus_parsing() {
   uint8_t packet[25], packet_pos = 0, start = 0x0f, message = 0;
 
@@ -188,7 +194,7 @@ int velocity_callback(const float *velocity_buffer, int buffer_len,
   const int i = 0;
   if (pwm_motor_write(&(motor[i]), velocity_pwm_interpolation(
                                        *(velocity_buffer + i),
-                                       wheel_velocity_range, pwm_range))) {
+wheel_velocity_range, pwm_range))) {
     printk("Drive: Unable to write pwm pulse to Left : %d", i);
     return 1;
   }
@@ -318,6 +324,9 @@ int main() {
     }
   }
 
+  // timer for arm_joints
+  k_timer_start(&my_timer, K_USEC(50), K_USEC(25));
+  
   printk("Initialization completed successfully!\n");
 
   while (true) {
@@ -331,10 +340,6 @@ int main() {
         printk("%d \t", ch[i]);
       }
       printk("\n");
-
-      pos1 = arm_joints(0, ch[4], pos1); // turn-table
-      pos2 = arm_joints(1, ch[5], pos2); // Line 1(turn-table)
-      pos3 = arm_joints(2, ch[6], pos3); // Link 2
 
       arm_joints_write(7, ch[7]); // ABox
 
