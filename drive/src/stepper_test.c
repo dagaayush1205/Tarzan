@@ -47,12 +47,12 @@ float stepInterval;
 int sbus_parsing() {
   uint8_t packet[25], packet_pos = 0, start = 0x0f, message = 0;
 
-  k_msgq_get(&uart_msgq, &message, K_MSEC(4));
+  k_msgq_get(&uart_msgq, &message, K_NO_WAIT);
 
   if (message == start) {
     for (packet_pos = 0; packet_pos < 25; packet_pos++) {
       packet[packet_pos] = message;
-      k_msgq_get(&uart_msgq, &message, K_MSEC(4));
+      k_msgq_get(&uart_msgq, &message, K_NO_WAIT);
     }
     ch = parse_buffer(packet);
     return 1;
@@ -76,6 +76,7 @@ void serial_cb(const struct device *dev, void *user_data) {
     k_msgq_put(&uart_msgq, &c, K_NO_WAIT); // put message from UART to queue
   }
 }
+
 void setSpeed(float speed){
 	if(speed == 0.0) 
 		stepInterval = 0.0;
@@ -85,13 +86,15 @@ void setSpeed(float speed){
 
 int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd, int pos) { 
 	
-  if (ch > channel_range[1]) {
-    gpio_pin_set_dt(&(motor->dir), 1);
-    pos += 1; // clockwise
+  if(abs(cmd-channel_range[1])<200) return pos;
+  
+  if (cmd > channel_range[1]) {
+    gpio_pin_set_dt(&(motor->dir), 1); // clockwise
+    pos += 1; 
   } else {
-    gpio_pin_set_dt(&(motor->dir), 0);
+    gpio_pin_set_dt(&(motor->dir), 0); // anti-clockwise
     pos -= 1;
-  } // anticlockwise
+  } 
   switch (pos & 0x03) {
   case 0:
     gpio_pin_set_dt(&(motor->step), 0);
@@ -109,23 +112,23 @@ int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd, int pos
   return pos;
 } 
 
-void arm_joints() {
+void arm_joints(uint16_t cmd[2]) {
 //  setSpeed(500000.0);
-  // Stepper Motor Forward
-  for(int i=0;i<3;i++){
-  time[i] = k_uptime_ticks();
-  if ((time[i] - last_time[i]) >= 25) {
-    pos[i] = Stepper_motor_write(&stepper[i], ch, pos[i]);
-  last_time[i] = time[i];
+  for(int i=0;i<2;i++){
+ 	 time[i] = k_uptime_ticks();
+  	//printk("%"PRIu64"\n",(time[0]-last_time[0]));
+  	 if ((time[i] - last_time[i]) >= 1) {
+   		 pos[i] = Stepper_motor_write(&stepper[i], cmd[i], pos[i]);
+  		 last_time[i] = time[i];
   	}
-  }
+    }
 }
 
 int main() {
 
-	int err;
-	uint16_t c = 2000;
-
+	int err, flag;
+	uint16_t c[2] = {600,600};
+	uint64_t t, last; 
   if (!device_is_ready(uart_dev)) {
     LOG_ERR("UART device not ready");
   }
@@ -180,17 +183,21 @@ int main() {
 	}
 
 	LOG_INF("Initialization completed successfully!");
-	
 	while(true)
 	{
-		k_msgq_get(&uart_msgq, &packet, K_NO_WAIT);
-		
-		ch = parse_buffer(packet); 
-
-		// first link 
-		arm_joints();
-	//	arm_joints(1, c);
-	//	arm_joints(2, c);
-
-	}
+	t = k_uptime_ticks();
+	   printk("%"PRIu64"\n",(t-last));
+	      flag = sbus_parsing(); 
+	      if(flag ==0){
+	      	printk("error");
+	      	continue;
+	      }
+	      else {
+	//	   for(int i=0;i<3;i++) printk("%d\t",ch[i]);
+	//	   printk("\n");
+		   arm_joints(ch);
+	
+		}
+	last = t; 
+   }
 }
