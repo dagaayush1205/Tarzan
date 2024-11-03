@@ -200,19 +200,19 @@
 		compatible = "stepper-motors"; 
 		stepper_motor_1: motor_1 { 
 			label = "First link"; 
-			dir-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>; //D0 PB7 
-			step-gpios = <&gpioc 0 GPIO_ACTIVE_LOW>; //A1 PC0
+			dir-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>; //D0  
+			step-gpios = <&gpioc 0 GPIO_ACTIVE_LOW>; //A1 
 		};
 	
 		stepper_motor_2: motor_2 {
 			label = "Second Link"; 
-			dir-gpios = <&gpioc 3 GPIO_ACTIVE_LOW>; //A2
+			dir-gpios = <&gpiog 14 GPIO_ACTIVE_LOW>; //D2
 			step-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>; //A3
 		};
 	
 		stepper_motor_3: motor_3 { 
 			label = "Turn Table";
-			dir-gpios = <&gpioc 2 GPIO_ACTIVE_LOW>; //A4
+			dir-gpios = <&gpioe 13 GPIO_ACTIVE_LOW>; //D3
 			step-gpios = <&gpiof 7 GPIO_ACTIVE_LOW>; //A5
 		};
 	};
