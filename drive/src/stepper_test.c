@@ -86,7 +86,10 @@ void setSpeed(float speed){
 
 int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd, int pos) { 
 	
-  if(abs(cmd-channel_range[1])<200) return pos;
+  if(abs(cmd-channel_range[1])<200) {
+	  //gpio_pin_set_dt(&(motor->step),0);
+	  return pos;
+  }
   
   if (cmd > channel_range[1]) {
     gpio_pin_set_dt(&(motor->dir), 1); // clockwise
@@ -115,7 +118,7 @@ int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd, int pos
 void arm_joints(struct k_work *work) {
   uint16_t cmd[2] = {ch[0], ch[1]};
  // printk("%4d %4d\n",cmd[0],cmd[1]);
-  setSpeed(500000.0);
+ // setSpeed(500000.0);
   for(int i=0;i<2;i++){
  //	 time[i] = k_uptime_ticks();
   //	 if ((time[i] - last_time[i]) >= 1) {
@@ -187,7 +190,7 @@ int main() {
 			return 0;
 		}	
 	}
-	k_timer_start(&my_timer, K_USEC(60), K_USEC(10));
+	k_timer_start(&my_timer, K_USEC(60), K_USEC(15));
 	printk("Initialization completed successfully!");
 	while(true)
 	{
