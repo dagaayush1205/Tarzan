@@ -46,25 +46,15 @@ float la_speed_range[] = {-127.0, 127.0};
 float angle_range[] = {-270, 270};
 uint16_t channel_range[] = {172, 1811};
 uint16_t *ch;
+int pos[2] = {0};
 
-int pos1, pos2, pos3;     // record position of each stepper
-uint64_t last_time[2]; // record time for stepper pulse
-float stepInterval;       // time interval for each pulse
+int Stepper_motor_write(const struct stepper_motor *motor, uint16_t ch,
+                        int pos) {
 
-void setSpeed(float speed) {
-  if (speed == 0.0)
-    stepInterval = 0.0;
-  else
-    stepInterval = CONFIG_SYS_CLOCK_TICKS_PER_SEC * MINUTES_TO_SEC /
-                   (PULSE_PER_REV * speed);
-}
-
-int Stepper_motor_write(const struct stepper_motor *motor, uint16_t ch				
-			,int pos) {
-
-  if(ch < 1005 && ch > 995) {
-		  return pos;}
-  if (ch > channel_range[1]) {
+  if (abs(ch - 992) < 200) {
+    return pos;
+  }
+  if (ch > 1004) {
     gpio_pin_set_dt(&(motor->dir), 1);
     pos += 1; // clockwise
   } else {
@@ -89,19 +79,16 @@ int Stepper_motor_write(const struct stepper_motor *motor, uint16_t ch
 }
 void arm_joints(struct k_work *work) {
   uint16_t cmd[2] = {ch[4], ch[5]};
-  int pos[2]; 
-  setSpeed(500000.0);
-  for(int i=0;i<2;i++){
-    pos[i] = Stepper_motor_write(&stepper[i],
-		    	      cmd[i], pos[i]);
-   // last_time[i] = time[i];
+  // int pos[2];
+  for (int i = 0; i < 2; i++) {
+    //    printk("stepper\n");
+    pos[i] = Stepper_motor_write(&stepper[i], cmd[i], pos[i]);
+    // last_time[i] = time[i];
   }
 }
 K_WORK_DEFINE(my_work, arm_joints);
 
-void my_timer_handler(struct k_timer *dummy){
-	k_work_submit(&my_work);
-}
+void my_timer_handler(struct k_timer *dummy) { k_work_submit(&my_work); }
 K_TIMER_DEFINE(my_timer, my_timer_handler, NULL);
 
 int sbus_parsing() {
@@ -195,7 +182,7 @@ int velocity_callback(const float *velocity_buffer, int buffer_len,
   const int i = 0;
   if (pwm_motor_write(&(motor[i]), velocity_pwm_interpolation(
                                        *(velocity_buffer + i),
-wheel_velocity_range, pwm_range))) {
+                                       wheel_velocity_range, pwm_range))) {
     printk("Drive: Unable to write pwm pulse to Left : %d", i);
     return 1;
   }
@@ -239,7 +226,7 @@ int arm_joints_write(int i, uint16_t ch) {
 
 int main() {
   int err, i, flag = 0;
-  uint16_t neutral = 992; 
+  uint16_t neutral = 992;
   uint64_t drive_timestamp = 0;
   uint64_t time_last_drive_update = 0;
 
@@ -327,8 +314,8 @@ int main() {
   }
 
   // timer for arm_joints
-  k_timer_start(&my_timer, K_USEC(20), K_USEC(5));
-  
+  k_timer_start(&my_timer, K_USEC(100), K_USEC(10));
+
   printk("Initialization completed successfully!\n");
 
   while (true) {
@@ -345,14 +332,14 @@ int main() {
 
       arm_joints_write(7, ch[7]); // ABox
 
-      if (ch[8] > 992) {
+      if (ch[8] > 1000) {
 
-	arm_joints_write(8, neutral); // Y of YPR
+        arm_joints_write(8, neutral); // Y of YPR
         arm_joints_write(9, neutral); // P of YPR
 
-        arm_joints_write(12,neutral); // Gripper1
-        arm_joints_write(13,neutral); // Gripper2
-        arm_joints_write(14,neutral); // R of YPR
+        arm_joints_write(12, neutral); // Gripper1
+        arm_joints_write(13, neutral); // Gripper2
+        arm_joints_write(14, neutral); // R of YPR
         cmd.angular_z =
             sbus_velocity_interpolation(ch[0], angular_velocity_range);
         cmd.linear_x =
@@ -363,15 +350,17 @@ int main() {
         linear_actuator_write(2, ch[2]);
         linear_actuator_write(3, ch[3]);
       } else {
-        cmd.angular_z = sbus_velocity_interpolation(neutral, angular_velocity_range); 
-        cmd.linear_x = sbus_velocity_interpolation(neutral, linear_velocity_range);
+        cmd.angular_z =
+            sbus_velocity_interpolation(neutral, angular_velocity_range);
+        cmd.linear_x =
+            sbus_velocity_interpolation(neutral, linear_velocity_range);
 
         err = diffdrive_update(drive, cmd, time_last_drive_update);
 
         linear_actuator_write(2, neutral);
         linear_actuator_write(3, neutral);
-        
-	arm_joints_write(8, ch[0]); // Y of YPR
+
+        arm_joints_write(8, ch[0]); // Y of YPR
         arm_joints_write(9, ch[1]); // P of YPR
 
         arm_joints_write(12, ch[2]); // Gripper1
