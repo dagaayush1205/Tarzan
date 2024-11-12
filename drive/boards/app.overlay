@@ -110,6 +110,39 @@
 		};
 
 	};
+	steppermotors { 
+		compatible = "stepper-motors"; 
+		stepper_motor_1: motor_1 { 
+			label = "First link"; 
+			dir-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>; //D0  
+			step-gpios = <&gpioc 0 GPIO_ACTIVE_LOW>; //A1 
+		};
+	
+		stepper_motor_2: motor_2 {
+			label = "Second Link"; 
+			dir-gpios = <&gpiog 14 GPIO_ACTIVE_LOW>; //D2
+			step-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>; //A3
+		};
+	
+		stepper_motor_3: motor_3 { 
+			label = "Turn Table";
+			dir-gpios = <&gpioe 13 GPIO_ACTIVE_LOW>; //D3
+			step-gpios = <&gpiof 7 GPIO_ACTIVE_LOW>; //A5
+		};
+	};
+	limit_switches: limit_switches {
+		compatible = "limit-switches";
+		gpios = <&gpioe 11 GPIO_ACTIVE_HIGH>,
+			<&gpioa 8 GPIO_ACTIVE_HIGH>,
+			<&gpiog 12 GPIO_ACTIVE_HIGH>,
+			<&gpiog 9 GPIO_ACTIVE_HIGH>,
+			<&gpiod 15 GPIO_ACTIVE_HIGH>,
+			<&gpiod 14 GPIO_ACTIVE_HIGH>,
+			<&gpioa 7 GPIO_ACTIVE_HIGH>,
+			<&gpioa 6 GPIO_ACTIVE_HIGH>,
+			<&gpiob 9 GPIO_ACTIVE_HIGH>;
+
+	};
 	aliases {
 			debug-uart = &usart2;
 			mother-uart = &usart6;
@@ -121,6 +154,7 @@
       			stepper-motor1 = &stepper_motor_1; 
 			stepper-motor2 = &stepper_motor_2; 
 			stepper-motor3 = &stepper_motor_3;
+			limit-switch = &limit_switches;
 	};
     chosen {
             zephyr,console = &usart2;
@@ -229,6 +263,7 @@
 		pinctrl-names = "default"; 
   };
 };
+
 &timers16 { 
 	status = "okay"; 
 	st,prescaler = <5599>; 
@@ -238,28 +273,8 @@
 		pinctrl-0 = <&tim16_ch1n_pb6 &tim16_ch1_pb8 &tim16_ch1_pf6 &tim16_ch1n_pf8>;
 		pinctrl-names = "default"; 
 	};
-
-	steppermotors { 
-		compatible = "stepper-motors"; 
-		stepper_motor_1: motor_1 { 
-			label = "First link"; 
-			dir-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>; //D0 PB7 
-			step-gpios = <&gpioc 0 GPIO_ACTIVE_LOW>; //A1 PC0
-		};
-	
-		stepper_motor_2: motor_2 {
-			label = "Second Link"; 
-			dir-gpios = <&gpiog 14 GPIO_ACTIVE_LOW>; //D2
-			step-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>; //A3
-		};
-	
-		stepper_motor_3: motor_3 { 
-			label = "Turn Table";
-			dir-gpios = <&gpioe 13 GPIO_ACTIVE_LOW>; //D3
-			step-gpios = <&gpiof 7 GPIO_ACTIVE_LOW>; //A5
-		};
-	};
 };
+
 &i2c1 {
 	status = "okay"; 
 	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7>;
@@ -275,5 +290,4 @@
 		reg = <0x69>;
 		status = "okay"; 
 	};
-
 };
