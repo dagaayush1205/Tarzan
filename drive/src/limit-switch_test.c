@@ -14,9 +14,6 @@
 
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
-static const struct device *const uart_debug =
-    DEVICE_DT_GET(DT_ALIAS(debug_uart)); // debugger
-
 static const struct gpio_dt_spec gripper =
     GPIO_DT_SPEC_GET_BY_IDX(DT_ALIAS(limit_switch), gpios, 1);
 int main() {
@@ -36,7 +33,7 @@ int main() {
   LOG_INF("Initialization completed successfully!\n");
 
   while (true) {
-    if (gpio_port_get(&gripper, 0) == 0)
+    if (gpio_pin_get_dt(&gripper) == 0)
       LOG_INF("limit switch hit");
   }
 }
