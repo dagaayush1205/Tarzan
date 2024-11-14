@@ -5,3 +5,11 @@ project(Tarzan LANGUAGES C)
 
 target_sources(app PRIVATE src/main.c)
 
+execute_process(
+    COMMAND git describe
+    OUTPUT_VARIABLE GIT_BRANCH_NAME
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+add_definitions(-DGIT_BRANCH_NAME=\"${GIT_BRANCH_NAME}\")
+
+
