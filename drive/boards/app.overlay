@@ -83,11 +83,13 @@
 			step-gpios = <&gpiod 15 GPIO_ACTIVE_LOW>; //D15
 		};
 	};
-	limit_switches: limit_switches {
-		compatible = "limit-switches";
-		gpios = <&gpioe 11 GPIO_ACTIVE_HIGH>,
-			<&gpiod 14 GPIO_ACTIVE_HIGH>;
-	};
+  switches: limit_switches {
+		compatible = "gpio-keys";
+    switch1: switch_1 {
+      
+      gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+    };
+  };
 	aliases {
 			debug-uart = &usart2;
 			mother-uart = &usart6;
@@ -96,10 +98,10 @@
 			stepper-motor3 = &stepper_motor_3;
 			imu-lower-joint = &lj_imu; 
 			imu-upper-joint = &uj_imu;
-      			stepper-motor1 = &stepper_motor_1; 
+      stepper-motor1 = &stepper_motor_1; 
 			stepper-motor2 = &stepper_motor_2; 
 			stepper-motor3 = &stepper_motor_3;
-			limit-switch = &limit_switches;
+			limit-switch = &switch1;
 	};
 	chosen {
 		zephyr,console = &usart2;

@@ -116,6 +116,87 @@ K_WORK_DEFINE(my_work, arm_joints);
 void my_timer_handler(struct k_timer *dummy) { k_work_submit(&my_work); }
 K_TIMER_DEFINE(my_timer, my_timer_handler, NULL);
 
+<<<<<<< Updated upstream
+=======
+int sbus_parsing() {
+  uint8_t packet[25], packet_pos = 0, start = 0x0f, message = 0;
+
+  k_msgq_get(&uart_msgq, &message, K_MSEC(4));
+
+  if (message == start) {
+    for (packet_pos = 0; packet_pos < 25; packet_pos++) {
+      packet[packet_pos] = message;
+      k_msgq_get(&uart_msgq, &message, K_MSEC(4));
+      printk("Message was found");
+    }
+    ch = parse_buffer(packet);
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+void serial_cb(const struct device *dev, void *user_data) {
+  uint8_t c;
+  printk("Entered Serial Callback");
+  if (!uart_irq_update(uart_dev)) {
+    return;
+  }
+
+  if (!uart_irq_rx_ready(uart_dev)) {
+    return;
+  }
+
+  while (uart_fifo_read(uart_dev, &c, 1) == 1) {
+    k_msgq_put(&uart_msgq, &c, K_NO_WAIT); // put message from UART to queue
+  }
+}
+
+float one_hot_interpolation(uint16_t channel_input) {
+
+  if (channel_input > channel_range[1]) {
+    return pwm_range[1];
+  }
+
+  if (channel_input < channel_range[0]) {
+    return pwm_range[0];
+  }
+
+  if (channel_input < 1005 && channel_input > 995) {
+    return (pwm_range[0] + pwm_range[1]) / 2;
+  }
+  float dchannel = channel_range[1] - channel_range[0];
+  float dpwm = pwm_range[1] - pwm_range[0];
+
+  uint32_t pwm_interp =
+      pwm_range[0] + (dpwm / dchannel) * (channel_input - channel_range[0]);
+
+  return pwm_interp;
+}
+
+float sbus_velocity_interpolation(uint16_t channel_input,
+                                  float *velocity_range) {
+
+  if (channel_input > channel_range[1]) {
+    return velocity_range[1];
+  }
+
+  if (channel_input < channel_range[0]) {
+    return velocity_range[0];
+  }
+
+  if (channel_input < 1005 && channel_input > 995) {
+    return (velocity_range[0] + velocity_range[1]) / 2;
+  }
+  float dchannel = channel_range[1] - channel_range[0];
+  float dvel = velocity_range[1] - velocity_range[0];
+
+  float vel_interp = velocity_range[0] +
+                     (dvel / dchannel) * (channel_input - channel_range[0]);
+  return vel_interp;
+}
+
+>>>>>>> Stashed changes
 int feedback_callback(float *feedback_buffer, int buffer_len,
                       int wheels_per_side) {
   return 0;

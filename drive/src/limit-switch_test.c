@@ -15,25 +15,47 @@
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 static const struct gpio_dt_spec gripper =
-    GPIO_DT_SPEC_GET_BY_IDX(DT_ALIAS(limit_switch), gpios, 1);
-int main() {
+    GPIO_DT_SPEC_GET(DT_ALIAS(limit_switch), gpios);
+/*int main() {
 
   //  for (int i = 0; i < 9; i++) {
   if (!gpio_is_ready_dt(&gripper)) {
-    LOG_ERR("gpio %d is not ready\n", 1);
+    printk("gpio %d is not ready\n", 1);
     return 0;
   }
   //}
   // for (int i = 0; i < 9; i++) {
-  if (!gpio_pin_configure_dt(&gripper, GPIO_INPUT)) {
-    LOG_ERR("Error: gpio %d is not configured\n", 1);
+  if (gpio_pin_configure_dt(&gripper, GPIO_INPUT)) {
+    printk("Error: gpio %d is not configured\n", 1);
     return 0;
   }
   //}
-  LOG_INF("Initialization completed successfully!\n");
+  printk("Initialization completed successfully!\n");
 
   while (true) {
     if (gpio_pin_get_dt(&gripper) == 0)
-      LOG_INF("limit switch hit");
+      printk("limit switch hit\n");
   }
+}*/
+
+
+int main(void)
+{
+	int err;
+  printk("This is branch: %s\n",GIT_BRANCH_NAME);
+	if (!gpio_is_ready_dt(&gripper)) {
+		printf("The load switch pin GPIO port is not ready.\n");
+		return 0;
+	}
+	err = gpio_pin_configure_dt(&gripper, GPIO_INPUT);
+	if (err != 0) {
+		printf("Configuring GPIO pin failed: %d\n", err);
+		return 0;
+	}
+  printk("Initialization completed\n");
+  while(true)
+    printk("state: %d\n",gpio_pin_get_dt(&gripper));
+  sleep(MSEC(100));
+	return 0;
+
 }
