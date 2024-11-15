@@ -153,7 +153,7 @@ int actuator_write(int i, uint16_t ch) {
 }
 
 int main() {
-  printk("This is %s\n",GIT_BRANCH_NAME);
+  printk("This is tarzan version %s\nFile: %s\n", GIT_BRANCH_NAME, __FILE__);
   int err, i, flag = 0;
   uint16_t neutral = 992;
   uint64_t drive_timestamp = 0;
