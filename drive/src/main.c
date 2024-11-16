@@ -116,8 +116,6 @@ K_WORK_DEFINE(my_work, arm_joints);
 void my_timer_handler(struct k_timer *dummy) { k_work_submit(&my_work); }
 K_TIMER_DEFINE(my_timer, my_timer_handler, NULL);
 
-<<<<<<< Updated upstream
-=======
 int sbus_parsing() {
   uint8_t packet[25], packet_pos = 0, start = 0x0f, message = 0;
 
