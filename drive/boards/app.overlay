@@ -22,33 +22,13 @@
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
 		};
-		cytron2_1: pwm_5 {
-			pwms  = <&pwm3 1 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
-			min-pulse = <PWM_USEC(1100)>;
-			max-pulse = <PWM_USEC(1900)>;
-		};
-		cytron2_2: pwm_6 {
-			pwms  = <&pwm3 2 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
-			min-pulse = <PWM_USEC(1100)>;
-			max-pulse = <PWM_USEC(1900)>;
-		};
-		roboclaw_1: pwm_7 {
+		roboclaw_1: pwm_5 {
 			pwms  = <&pwm4 1 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
 		};
-		roboclaw_2: pwm_8 {
+		roboclaw_2: pwm_6 {
 			pwms  = <&pwm4 2 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
-			min-pulse = <PWM_USEC(1100)>;
-			max-pulse = <PWM_USEC(1900)>;
-		};
-		extra_1: pwm_9 {
-			pwms  = <&pwm4 3 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
-			min-pulse = <PWM_USEC(1100)>;
-			max-pulse = <PWM_USEC(1900)>;
-		};
-		extra_2: pwm_10 {
-			pwms  = <&pwm4 4 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
 		};
@@ -70,7 +50,7 @@
 		stepper_motor_3: motor_3 { 
 			label = "Turn Table";
 			dir-gpios = <&gpioe 13 GPIO_ACTIVE_LOW>; //D3
-			step-gpios = <&gpiof 7 GPIO_ACTIVE_LOW>; //A5
+			step-gpios = <&gpiof 14 GPIO_ACTIVE_LOW>; //A5
 		};
 		stepper_motor_4: motor_4 { 
 			label = "Pitch";
@@ -99,7 +79,7 @@
 			stepper-motor3 = &stepper_motor_3;
 			imu-lower-joint = &lj_imu; 
 			imu-upper-joint = &uj_imu;
-      stepper-motor1 = &stepper_motor_1; 
+      			stepper-motor1 = &stepper_motor_1; 
 			stepper-motor2 = &stepper_motor_2; 
 			stepper-motor3 = &stepper_motor_3;
 			limit-switch = &switch1;
@@ -142,16 +122,6 @@
 	pwm2: pwm {
 		status = "okay";
 		pinctrl-0 = <&tim2_ch1_pa0 &tim2_ch2_pa1 &tim2_ch3_pa2 &tim2_ch4_pa3>;
-		pinctrl-names = "default";
-	};
-};
-
-&timers3 {
-	status = "okay";
-	st,prescaler = <5599>;
-	pwm3: pwm {
-		status = "okay";
-		pinctrl-0 = <&tim3_ch1_pb4 &tim3_ch2_pb5>;
 		pinctrl-names = "default";
 	};
 };
