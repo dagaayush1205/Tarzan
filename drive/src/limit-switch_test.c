@@ -53,9 +53,6 @@ int main(void)
 		return 0;
 	}
   printk("Initialization completed\n");
-  while(true)
-    printk("state: %d\n",gpio_pin_get_dt(&gripper));
-  sleep(MSEC(100));
-	return 0;
+  return 0;
 
 }
