@@ -1,6 +1,5 @@
 #include <stdint.h>
 
-#include <kyvernitis/lib/kyvernitis.h>
 
 float sbus_velocity_interpolation(uint16_t channel, float *velocity_range,
                                   int *channel_range);

@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <zephyr/drivers/gpios.h>
 
 #include <kyvernitis/lib/kyvernitis.h>
 
