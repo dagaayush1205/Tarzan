@@ -47,12 +47,15 @@ int main(void)
 		printf("The load switch pin GPIO port is not ready.\n");
 		return 0;
 	}
-	err = gpio_pin_configure_dt(&gripper, GPIO_INPUT);
+	err = gpio_pin_configure_dt(&gripper, GPIO_INPUT | GPIO_PULL_UP);
 	if (err != 0) {
 		printf("Configuring GPIO pin failed: %d\n", err);
 		return 0;
 	}
   printk("Initialization completed\n");
-  return 0;
+  while(true)
+    printk("state: %d\n",gpio_pin_get_dt(&gripper));
+  sleep(MSEC(100));
+	return 0;
 
 }
