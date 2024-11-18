@@ -73,13 +73,13 @@
 	aliases {
 			debug-uart = &usart2;
 			mother-uart = &usart6;
-      test-uart = &usart10;
+      test-uart = &usart3;
 			stepper-motor1 = &stepper_motor_1; 
 			stepper-motor2 = &stepper_motor_2; 
 			stepper-motor3 = &stepper_motor_3;
 			imu-lower-joint = &lj_imu; 
 			imu-upper-joint = &uj_imu;
-      			stepper-motor1 = &stepper_motor_1; 
+      stepper-motor1 = &stepper_motor_1; 
 			stepper-motor2 = &stepper_motor_2; 
 			stepper-motor3 = &stepper_motor_3;
 			limit-switch = &switch1;
@@ -103,12 +103,13 @@
         status = "okay";
         current-speed = <57600>;
 };
-&usart10 {
-  pinctrl-0 = <&usart10_tx_pe3 &usart10_rx_pe2>;
-  pintctrl-names="default";
-  status = "okay";
+&usart3{
+	status = "okay";
+  pinctrl-names = "default";
   current-speed = <230400>;
-  };
+  pinctrl-0 = <&usart3_tx_pb10 &usart3_rx_pb11>;
+		};
+
 &zephyr_udc0 {
 	cdc_acm_uart0: cdc_acm_uart0 {
 		compatible = "zephyr,cdc-acm-uart";
