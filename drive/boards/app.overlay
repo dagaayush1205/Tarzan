@@ -50,7 +50,7 @@
 		stepper_motor_3: motor_3 { 
 			label = "Turn Table";
 			dir-gpios = <&gpioe 13 GPIO_ACTIVE_LOW>; //D3
-			step-gpios = <&gpiof 14 GPIO_ACTIVE_LOW>; //A5
+			step-gpios = <&gpiof 11 GPIO_ACTIVE_LOW>; //A5
 		};
 		stepper_motor_4: motor_4 { 
 			label = "Pitch";
@@ -63,23 +63,24 @@
 			step-gpios = <&gpiod 15 GPIO_ACTIVE_LOW>; //D15
 		};
 	};
-  switches: limit_switches {
-		compatible = "gpio-keys";
-    switch1: switch_1 {
-      
-      gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
-    };
-  };
+	switches: limit_switches {
+		  compatible = "gpio-keys";
+		  switch1: switch_1 {
+			gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+	 	};
+  	};
 	aliases {
 			debug-uart = &usart2;
 			mother-uart = &usart6;
-      test-uart = &usart3;
+      			test-uart = &usart3;
 			stepper-motor1 = &stepper_motor_1; 
 			stepper-motor2 = &stepper_motor_2; 
 			stepper-motor3 = &stepper_motor_3;
-			imu-lower-joint = &lj_imu; 
-			imu-upper-joint = &uj_imu;
-      stepper-motor1 = &stepper_motor_1; 
+			imu-lower-joint = &fl_imu; 
+			imu-upper-joint = &sl_imu;
+			imu-turn-table = &tt_imu; 
+			imu-pr = &pr_imu;
+      			stepper-motor1 = &stepper_motor_1; 
 			stepper-motor2 = &stepper_motor_2; 
 			stepper-motor3 = &stepper_motor_3;
 			limit-switch = &switch1;
@@ -103,12 +104,13 @@
         status = "okay";
         current-speed = <57600>;
 };
+
 &usart3{
 	status = "okay";
-  pinctrl-names = "default";
-  current-speed = <230400>;
-  pinctrl-0 = <&usart3_tx_pb10 &usart3_rx_pb11>;
-		};
+	pinctrl-names = "default";
+	current-speed = <230400>;
+	pinctrl-0 = <&usart3_tx_pb10 &usart3_rx_pb11>;
+};
 
 &zephyr_udc0 {
 	cdc_acm_uart0: cdc_acm_uart0 {
@@ -139,15 +141,32 @@
 
 &i2c1 {
 	status = "okay"; 
-	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7>;
+	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb9>;
 	pinctrl-names = "default"; 
 	clock-frequency = <I2C_BITRATE_STANDARD>; 
-	lj_imu: mpu6050@68 { 
+	fl_imu: mpu6050@68 { 
 		compatible = "invensense,mpu6050";
 		reg = <0x68>;
 		status = "okay"; 
 	}; 
-	uj_imu: mpu6050@69 { 
+	sl_imu: mpu6050@69 { 
+		compatible = "invensense,mpu6050";
+		reg = <0x69>;
+		status = "okay"; 
+	};
+};
+
+&i2c4 {
+	status = "okay"; 
+	pinctrl-0 = <&i2c4_scl_pf14 &i2c4_sda_pf15>;
+	pinctrl-names = "default"; 
+	clock-frequency = <I2C_BITRATE_STANDARD>; 
+	tt_imu: mpu6050@68 { 
+		compatible = "invensense,mpu6050";
+		reg = <0x68>;
+		status = "okay"; 
+	}; 
+	pr_imu: mpu6050@69 { 
 		compatible = "invensense,mpu6050";
 		reg = <0x69>;
 		status = "okay"; 
