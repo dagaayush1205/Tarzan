@@ -7,7 +7,8 @@
 
 const struct device *const lower = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
 const struct device *const upper = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
-
+const struct device *const base = DEVICE_DT_GET(DT_ALIAS(imu_turn_table));
+const struct device *const end = DEVICE_DT_GET(DT_ALIAS(imu_pr));
 /* Causing buffer overflow
 static const char *now_str(void) {
   static char buf[16]; // ....HH:MM:SS.MMM
@@ -65,11 +66,23 @@ int main() {
     return 0;
   }
 
+  if (!device_is_ready(base)) {
+    printk("Device %s is not ready\n", lower->name);
+    return 0;
+  }
+
+  if (!device_is_ready(end)) {
+    printk("Device %s is not ready\n", upper->name);
+    return 0;
+  }
+
   printk("Initialization completed successfully!");
 
   while (true) {
     process_mpu6050(lower, 1);
     process_mpu6050(upper, 2);
+    process_mpu6050(base, 3);
+    process_mpu6050(end, 4);
     k_sleep(K_MSEC(20));
   }
 }
