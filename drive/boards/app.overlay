@@ -32,35 +32,55 @@
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
 		};
+		servo_1: pwm_7 {
+			pwms  = <&pwm4 3 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
+			min-pulse = <PWM_USEC(1100)>;
+			max-pulse = <PWM_USEC(1900)>;
+		};
+		servo_2: pwm_8 {
+			pwms  = <&pwm3 1 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
+			min-pulse = <PWM_USEC(1100)>;
+			max-pulse = <PWM_USEC(1900)>;
+		};
+		servo_3: pwm_9 {
+			pwms  = <&pwm3 2 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
+			min-pulse = <PWM_USEC(1100)>;
+			max-pulse = <PWM_USEC(1900)>;
+		};
+		servo_4: pwm_10 {
+			pwms  = <&pwm13 1 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
+			min-pulse = <PWM_USEC(1100)>;
+			max-pulse = <PWM_USEC(1900)>;
+		};
 	};
 	steppermotors { 
 		compatible = "stepper-motors"; 
 		stepper_motor_1: motor_1 { 
 			label = "First link"; 
-			dir-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>; //D0  
-			step-gpios = <&gpioc 0 GPIO_ACTIVE_LOW>; //A1 
+			dir-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>;   
+			step-gpios = <&gpioc 0 GPIO_ACTIVE_LOW>;
 		};
 	
 		stepper_motor_2: motor_2 {
 			label = "Second Link"; 
-			dir-gpios = <&gpiog 14 GPIO_ACTIVE_LOW>; //D2
-			step-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>; //A3
+			dir-gpios = <&gpiog 14 GPIO_ACTIVE_LOW>; 
+			step-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>; 
 		};
 	
 		stepper_motor_3: motor_3 { 
 			label = "Turn Table";
-			dir-gpios = <&gpioe 13 GPIO_ACTIVE_LOW>; //D3
-			step-gpios = <&gpiof 11 GPIO_ACTIVE_LOW>; //A5
+			dir-gpios = <&gpioe 13 GPIO_ACTIVE_LOW>; 
+			step-gpios = <&gpiof 11 GPIO_ACTIVE_LOW>;
 		};
 		stepper_motor_4: motor_4 { 
 			label = "Pitch";
-			dir-gpios = <&gpioa 8 GPIO_ACTIVE_LOW>; //D6
-			step-gpios = <&gpiog 12 GPIO_ACTIVE_LOW>; //D7
+			dir-gpios = <&gpioa 8 GPIO_ACTIVE_LOW>;
+			step-gpios = <&gpiog 12 GPIO_ACTIVE_LOW>;
 		};
 		stepper_motor_5: motor_5 { 
 			label = "Roll";
-			dir-gpios = <&gpiog 9 GPIO_ACTIVE_LOW>; //D8
-			step-gpios = <&gpiod 15 GPIO_ACTIVE_LOW>; //D15
+			dir-gpios = <&gpiog 9 GPIO_ACTIVE_LOW>;
+			step-gpios = <&gpiod 15 GPIO_ACTIVE_LOW>;
 		};
 	};
 	switches: limit_switches {
@@ -106,10 +126,10 @@
 };
 
 &usart3{
-	status = "okay";
-	pinctrl-names = "default";
-	current-speed = <230400>;
 	pinctrl-0 = <&usart3_tx_pb10 &usart3_rx_pb11>;
+	pinctrl-names = "default";
+	status = "okay";
+	current-speed = <230400>;
 };
 
 &zephyr_udc0 {
@@ -134,7 +154,39 @@
 	st,prescaler = <5599>;
 	pwm4: pwm {
 		status = "okay";
-		pinctrl-0 = <&tim4_ch1_pd12 &tim4_ch2_pd13 &tim4_ch3_pd14 &tim4_ch4_pd15>;
+		pinctrl-0 = <&tim4_ch1_pd12 &tim4_ch2_pd13 &tim4_ch3_pd14>;
+		pinctrl-names = "default";
+	};
+};
+
+&timers4 {
+	status = "okay";
+	st,prescaler = <5599>;
+	pwm4: pwm {
+		status = "okay";
+		pinctrl-0 = <&tim4_ch1_pd12 &tim4_ch2_pd13 &tim4_ch3_pd14>;
+		pinctrl-names = "default";
+	};
+};
+
+&timers3 {
+	status = "okay";
+	st,prescaler = <5599>;
+
+	pwm3: pwm {
+		status = "okay";
+		pinctrl-0 = <&tim3_ch1_pb4 &tim3_ch2_pb5>;
+		pinctrl-names = "default";
+	};
+};
+
+&timers13 {
+	status = "okay";
+	st,prescaler = <5599>;
+
+	pwm13: pwm {
+		status = "okay";
+		pinctrl-0 = <&tim13_ch1_pa6>;
 		pinctrl-names = "default";
 	};
 };
