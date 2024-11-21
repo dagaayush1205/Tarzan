@@ -211,7 +211,7 @@ int main() {
   }
 
   // timer for arm_joints
-  k_timer_start(&my_timer, K_USEC(100), K_USEC(10));
+  k_timer_start(&my_timer, K_USEC(100), K_USEC(20));
 
   printk("Initialization completed successfully!\n");
 
