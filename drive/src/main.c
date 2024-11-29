@@ -1,3 +1,4 @@
+#include "zephyr/sys/printk.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -14,13 +15,19 @@
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
 
+// creating mssg queue to store data
+K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
+
+static const struct device *const uart_dev =
+    DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
+
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id)                                            \
   {.dev_spec = PWM_DT_SPEC_GET(pwm_dev_id),                                    \
    .min_pulse = DT_PROP(pwm_dev_id, min_pulse),                                \
    .max_pulse = DT_PROP(pwm_dev_id, max_pulse)},
 
-struct pwm_motor motor[21] = {
+struct pwm_motor motor[10] = {
     DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
 
 /* DT spec for stepper */
@@ -32,14 +39,6 @@ const struct stepper_motor stepper[3] = {
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), dir_gpios),
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), step_gpios)}};
 
-// creating mssg queue to store data
-K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
-
-static const struct device *const uart_dev =
-    DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
-static const struct device *const uart_debug =
-    DEVICE_DT_GET(DT_ALIAS(debug_uart)); // debugger
-
 float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[] = {-5.5, 5.5};
 float wheel_velocity_range[] = {-10.0, 10.0};
@@ -48,8 +47,8 @@ float la_speed_range[] = {-127.0, 127.0};
 float angle_range[] = {-270, 270};
 uint16_t channel_range[] = {172, 1811};
 int pos[2] = {0};
-uint16_t *ch;       // to store sbus channels
-uint8_t packet[25]; // to store sbus packet
+uint16_t *ch;             // to store sbus channels
+uint8_t packet[25] = {0}; // to store sbus packet
 
 // to get serial data using uart
 void serial_cb(const struct device *dev, void *user_data) {
@@ -62,11 +61,12 @@ void serial_cb(const struct device *dev, void *user_data) {
     return;
 
   while (uart_fifo_read(uart_dev, &c, 1) == 1) {
+    //  printk("%hhx\n", c);
     if (c != start)
       continue;
     packet[0] = c;
     if (uart_fifo_read(uart_dev, packet + 1, 24) == 24)
-      k_msgq_put(&uart_msgq, packet, K_NO_WAIT);
+      k_msgq_put(&uart_msgq, packet + 1, K_NO_WAIT);
   }
 }
 
@@ -118,11 +118,13 @@ int actuator_write(int i, uint16_t ch) {
     printk("Linear Actuator: Unable to write at linear actuator %d", i);
     return 1;
   }
+  return 0;
 }
 
 int main() {
   printk("This is tarzan version %s\nFile: %s\n", GIT_BRANCH_NAME, __FILE__);
-  int err, i, flag = 0;
+
+  int err;
   uint16_t neutral = 992;
   uint64_t drive_timestamp = 0;
   uint64_t time_last_drive_update = 0;
@@ -137,6 +139,7 @@ int main() {
       .right_wheel_radius_multiplier = 1,
       .update_type = POSITION_FEEDBACK,
   };
+
   // 	Angular and linear velocity
   struct DiffDriveTwist cmd = {
       .angular_z = 0,
@@ -147,43 +150,19 @@ int main() {
       diffdrive_init(&drive_config, feedback_callback, velocity_callback);
 
   if (!device_is_ready(uart_dev)) {
-    LOG_ERR("UART device not ready");
+    printk("UART device not ready");
   }
 
   for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) {
     if (!pwm_is_ready_dt(&(motor[i].dev_spec))) {
-      LOG_ERR("PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
+      printk("PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
     }
   }
-  err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
-
-  if (err < 0) {
-    if (err == -ENOTSUP) {
-      printk("Interrupt-driven UART API support not enabled");
-    } else if (err == -ENOSYS) {
-      printk("UART device does not support interrupt-driven API");
-    } else {
-      printk("Error setting UART callback: %d", err);
-    }
-  }
-
-  uart_irq_rx_enable(uart_dev);
 
   for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) {
     if (pwm_motor_write(&(motor[i]), 1500000)) {
       printk("Unable to write pwm pulse to PWM Motor : %d", i);
     }
-  }
-
-  if (err < 0) {
-    if (err == -ENOTSUP)
-      printk("Interrupt-driven UART API support not enabled");
-
-    else if (err == -ENOSYS)
-      printk("UART device does not support interrupt-driven API");
-
-    else
-      printk("Error setting UART callback: %d", err);
   }
 
   for (size_t i = 0U; i < 3; i++) {
@@ -210,24 +189,45 @@ int main() {
     }
   }
 
+  err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
+
+  if (err < 0) {
+    if (err == -ENOTSUP)
+      printk("Interrupt-driven UART API support not enabled");
+
+    else if (err == -ENOSYS)
+      printk("UART device does not support interrupt-driven API");
+
+    else
+      printk("Error setting UART callback: %d", err);
+  }
+
+  if (err < 0) {
+    if (err == -ENOTSUP) {
+      printk("Interrupt-driven UART API support not enabled");
+    } else if (err == -ENOSYS) {
+      printk("UART device does not support interrupt-driven API");
+    } else {
+      printk("Error setting UART callback: %d", err);
+    }
+  }
+
   // timer for arm_joints
   k_timer_start(&my_timer, K_USEC(100), K_USEC(20));
 
   printk("Initialization completed successfully!\n");
+  uart_irq_rx_enable(uart_dev);
 
   while (true) {
-
-    k_msgq_get(&uart_msgq, &packet, K_MSEC(20));
-
+    k_msgq_get(&uart_msgq, &packet, K_MSEC(4));
     ch = parse_buffer(packet);
-
     drive_timestamp = k_uptime_get();
 
-    for (int i = 0; i < 10; i++) {
-      printk("%d \t", ch[i]);
-    }
-    printk("\n");
-
+    /*for (int i = 0; i < 10; i++) {*/
+    /*  printk("%d \t", ch[i]);*/
+    /*}*/
+    /*printk("\n");*/
+    /**/
     actuator_write(7, ch[7]); // ABox
 
     if (ch[8] > 1000) {

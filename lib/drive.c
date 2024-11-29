@@ -10,7 +10,7 @@
 // velocity_range - velocity range for interpolation
 // channel_range - sbus channel range
 float sbus_velocity_interpolation(uint16_t channel, float *velocity_range,
-                                  int *channel_range) {
+                                  uint16_t *channel_range) {
 
   if (channel > channel_range[1])
     return velocity_range[1];
