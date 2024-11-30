@@ -25,6 +25,10 @@ K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
 /* msgq to store sbus data */
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
 
+/* msgq poll event */
+struct k_poll_event msgq_poll = K_POLL_EVENT_STATIC_INITIALIZER(
+    K_POLL_TYPE_MSGQ_DATA_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &uart_msgq, 0);
+
 /* sbus uart */
 static const struct device *const uart_dev =
     DEVICE_DT_GET(DT_ALIAS(mother_uart));
@@ -94,7 +98,7 @@ void serial_cb(const struct device *dev, void *user_data) {
   }
 }
 /* work handler to form sbus packet and return sbus channels */
-void sbus_parsing(struct k_work *parse_sbus) {
+void sbus_parsing(struct k_work *sbus) {
   uint8_t start = 0x0f, packet[25] = {0}, message;
   k_msgq_get(&uart_msgq, &message, K_MSEC(4));
   if (message == start) {
@@ -107,6 +111,8 @@ void sbus_parsing(struct k_work *parse_sbus) {
     parse_buffer(packet, channel);
   }
 }
+K_WORK_DEFINE(parse_sbus, sbus);
+
 /* work handler to write to motors */
 void drive_write(struct k_work *actuator) {
   // drive motor write
@@ -206,30 +212,30 @@ int main() {
   k_work_queue_init(&work_q);
 
   if (!device_is_ready(uart_dev)) {
-    printk("UART device not ready");
+    printk("UART device not ready\n");
   }
 
   err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
 
   if (err < 0) {
     if (err == -ENOTSUP) {
-      printk("Interrupt-driven UART API support not enabled");
+      printk("Interrupt-driven UART API support not enabled\n");
     } else if (err == -ENOSYS) {
-      printk("UART device does not support interrupt-driven API");
+      printk("UART device does not support interrupt-driven API\n");
     } else {
-      printk("Error setting UART callback: %d", err);
+      printk("Error setting UART callback: %d\n", err);
     }
   }
 
   for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) {
     if (!pwm_is_ready_dt(&(motor[i].dev_spec))) {
-      printk("PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
+      printk("PWM: Motor %s is not ready\n", motor[i].dev_spec.dev->name);
     }
   }
 
   for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) {
     if (pwm_motor_write(&(motor[i]), 1500000)) {
-      printk("Unable to write pwm pulse to PWM Motor : %d", i);
+      printk("Unable to write pwm pulse to PWM Motor : %d\n", i);
     }
   }
 
@@ -246,27 +252,32 @@ int main() {
 
   for (size_t i = 0U; i < 3; i++) {
     if (gpio_pin_configure_dt(&(stepper[i].dir), GPIO_OUTPUT_INACTIVE)) {
-      printk("Error: Stepper motor %d: Dir %d not configured", i,
+      printk("Error: Stepper motor %d: Dir %d not configured\n", i,
              stepper[i].dir.pin);
       return 0;
     }
     if (gpio_pin_configure_dt(&(stepper[i].step), GPIO_OUTPUT_INACTIVE)) {
-      printk("Error: Stepper motor %d: Dir %d not configured", i,
+      printk("Error: Stepper motor %d: Dir %d not configured\n", i,
              stepper[i].step.pin);
       return 0;
     }
   }
 
-  // timer for arm_joints
-  // k_timer_start(&my_timer, K_USEC(100), K_USEC(20));
-
   printk("Initialization completed successfully!\n");
 
+  /* enable interrupt to receive sbus data */
   uart_irq_rx_enable(uart_dev);
 
-  /* start running work queue*/
+  /* start running work queue */
   k_work_queue_start(work_q, stack_area, K_THREAD_STACK_SIZEOF(stack_area),
                      PRIORITY, NULL);
 
   while (true) {
+    rc = k_poll(msgq_poll, 1, K_NO_WAIT);
+    if (rc == 0) {
+      k_work_submit_to_queue(work_q, &parse_sbus);
+      k_work_submit_to_queue(work_q, &actuator_write);
+      k_work_submit_to_queue(work_q, &stepper_write);
+    }
   }
+}
