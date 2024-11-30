@@ -1,3 +1,4 @@
+#include "zephyr/kernel/thread_stack.h"
 #include "zephyr/sys/printk.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -15,11 +16,18 @@
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
 
-// creating mssg queue to store data
+#define STACK_SIZE 512
+#define PRIORITY 5
+
+/* workq dedicated thread */
+K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
+
+/* msgq to store sbus data */
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
 
+/* sbus uart */
 static const struct device *const uart_dev =
-    DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
+    DEVICE_DT_GET(DT_ALIAS(mother_uart));
 
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id)                                            \
@@ -39,18 +47,39 @@ const struct stepper_motor stepper[3] = {
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), dir_gpios),
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), step_gpios)}};
 
+/* diffrential drive configs */
+struct DiffDriveConfig drive_config = {
+    .wheel_separation = 0.77f,
+    .wheel_separation_multiplier = 1,
+    .wheel_radius = 0.15f,
+    .wheels_per_side = 2,
+    .command_timeout_seconds = 2,
+    .left_wheel_radius_multiplier = 1,
+    .right_wheel_radius_multiplier = 1,
+    .update_type = POSITION_FEEDBACK,
+};
+
+/* angular and linear velocity */
+struct DiffDriveTwist cmd = {
+    .angular_z = 0,
+    .linear_x = 0,
+};
+
+struct DiffDrive *drive =
+    diffdrive_init(&drive_config, feedback_callback, velocity_callback);
+
+uint64_t time_last_drive_update = 0;
+uint64_t last_time = 0;
 float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[] = {-5.5, 5.5};
 float wheel_velocity_range[] = {-10.0, 10.0};
 uint32_t pwm_range[] = {1120000, 1880000};
-float la_speed_range[] = {-127.0, 127.0};
-float angle_range[] = {-270, 270};
 uint16_t channel_range[] = {172, 1811};
 int pos[2] = {0};
 uint16_t *ch;             // to store sbus channels
 uint8_t packet[25] = {0}; // to store sbus packet
 
-// to get serial data using uart
+/* interrupt to fill sbus data in queue */
 void serial_cb(const struct device *dev, void *user_data) {
   ARG_UNUSED(user_data);
   uint8_t c, start = 0x0F;
@@ -61,33 +90,81 @@ void serial_cb(const struct device *dev, void *user_data) {
     return;
 
   while (uart_fifo_read(uart_dev, &c, 1) == 1) {
-    //  printk("%hhx\n", c);
-    if (c != start)
-      continue;
-    packet[0] = c;
-    if (uart_fifo_read(uart_dev, packet + 1, 24) == 24)
-      k_msgq_put(&uart_msgq, packet + 1, K_NO_WAIT);
+    k_msgq_put(&uart_msgq, &c, K_NO_WAIT);
   }
 }
+/* work handler to form sbus packet and return sbus channels */
+void sbus_parsing(struct k_work *parse_sbus) {
+  uint8_t start = 0x0f, packet[25] = {0}, message;
+  k_msgq_get(&uart_msgq, &message, K_MSEC(4));
+  if (message == start) {
+    packet[0] = message;
+    for (int i = 1; i < 26; i++) {
+      k_msgq_get(&uart_msgq, &message, K_MSEC(4));
+      packet[i] == message;
+    }
+    // parse sbus packet
+    parse_buffer(packet, channel);
+  }
+}
+/* work handler to write to motors */
+void drive_write(struct k_work *actuator) {
+  // drive motor write
+  int drive_timestamp = k_uptime_get();
+  cmd.angular_z =
+      sbus_velocity_interpolation(ch[0], angular_velocity_range, channel_range);
+  cmd.linear_x =
+      sbus_velocity_interpolation(ch[1], linear_velocity_range, channel_range);
+  diffdrive_update(drive, cmd, time_last_drive_update);
+  time_last_drive_update = k_uptime_get() - drive_timestamp;
+  // linear actuator write
+  if (pwm_motor_write(&(motor[2]),
+                      sbus_pwm_interpolation(ch, pwm_range, channel_range)))
+    printk("Linear Actuator: Unable to write at linear actuator");
+  if (pwm_motor_write(&(motor[3]),
+                      sbus_pwm_interpolation(ch, pwm_range, channel_range)))
+    printk("Linear Actuator: Unable to write at linear actuator");
+  // gripper motor write
+  if (pwm_motor_write(&(motor[4]),
+                      sbus_pwm_interpolation(ch, pwm_range, channel_range)))
+    printk("Gripper: Unable to write at gripper");
+}
+K_WORK_DEFINE(actuator_write, actuator);
 
-void arm_joints(struct k_work *work) {
+/* work handler to write to arm stepper */
+void Stepper_motor_write(struct k_work *stepper) {
+  uint64_t step_interval = 50;
   uint16_t cmd[2] = {ch[4], ch[5]};
-  // int pos[2];
-  for (int i = 0; i < 2; i++) {
-    //    printk("stepper\n");
-    pos[i] = Stepper_motor_write(&stepper[i], cmd[i], pos[i]);
-    // last_time[i] = time[i];
+  uint64_t current_time = k_uptime_ticks();
+  if (current_time - last_time >= 50) {
+    for (int i = 0; i < 2; i++) {
+      if (abs(cmd[i] - 992) < 200)
+        continue; // deadzone
+      if (cmd[i] > 1004) {
+        gpio_pin_set_dt(&(stepper[i]->dir), 1);
+        pos += 1; // clockwise
+      } else {
+        gpio_pin_set_dt(&(stepper[i]->dir), 0);
+        pos -= 1; // anticlockwise
+      }
+      switch (pos & 0x03) {
+      case 0:
+        gpio_pin_set_dt(&(stepper[i]->step), 0);
+        break;
+      case 1:
+        gpio_pin_set_dt(&(stepper[i]->step), 1);
+        break;
+      case 2:
+        gpio_pin_set_dt(&(stepper[i]->step), 1);
+        break;
+      case 3:
+        gpio_pin_set_dt(&(stepper[i]->step), 0);
+        break;
+      }
+    }
   }
 }
-K_WORK_DEFINE(my_work, arm_joints);
-
-void my_timer_handler(struct k_timer *dummy) { k_work_submit(&my_work); }
-K_TIMER_DEFINE(my_timer, my_timer_handler, NULL);
-
-int feedback_callback(float *feedback_buffer, int buffer_len,
-                      int wheels_per_side) {
-  return 0;
-}
+K_WORK_DEFINE(stepper_write, stepper);
 
 int velocity_callback(const float *velocity_buffer, int buffer_len,
                       int wheels_per_side) {
@@ -112,45 +189,36 @@ int velocity_callback(const float *velocity_buffer, int buffer_len,
   return 0;
 }
 
-int actuator_write(int i, uint16_t ch) {
-  if (pwm_motor_write(&(motor[i]),
-                      sbus_pwm_interpolation(ch, pwm_range, channel_range))) {
-    printk("Linear Actuator: Unable to write at linear actuator %d", i);
-    return 1;
-  }
+int feedback_callback(float *feedback_buffer, int buffer_len,
+                      int wheels_per_side) {
   return 0;
 }
-
 int main() {
+
   printk("This is tarzan version %s\nFile: %s\n", GIT_BRANCH_NAME, __FILE__);
 
-  int err;
-  uint16_t neutral = 992;
+  int err, rc;
   uint64_t drive_timestamp = 0;
   uint64_t time_last_drive_update = 0;
 
-  struct DiffDriveConfig drive_config = {
-      .wheel_separation = 0.77f,
-      .wheel_separation_multiplier = 1,
-      .wheel_radius = 0.15f,
-      .wheels_per_side = 2,
-      .command_timeout_seconds = 2,
-      .left_wheel_radius_multiplier = 1,
-      .right_wheel_radius_multiplier = 1,
-      .update_type = POSITION_FEEDBACK,
-  };
-
-  // 	Angular and linear velocity
-  struct DiffDriveTwist cmd = {
-      .angular_z = 0,
-      .linear_x = 0,
-  };
-
-  struct DiffDrive *drive =
-      diffdrive_init(&drive_config, feedback_callback, velocity_callback);
+  /* initializing work queue */
+  struct k_work_q work_q;
+  k_work_queue_init(&work_q);
 
   if (!device_is_ready(uart_dev)) {
     printk("UART device not ready");
+  }
+
+  err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
+
+  if (err < 0) {
+    if (err == -ENOTSUP) {
+      printk("Interrupt-driven UART API support not enabled");
+    } else if (err == -ENOSYS) {
+      printk("UART device does not support interrupt-driven API");
+    } else {
+      printk("Error setting UART callback: %d", err);
+    }
   }
 
   for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) {
@@ -189,83 +257,16 @@ int main() {
     }
   }
 
-  err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
-
-  if (err < 0) {
-    if (err == -ENOTSUP)
-      printk("Interrupt-driven UART API support not enabled");
-
-    else if (err == -ENOSYS)
-      printk("UART device does not support interrupt-driven API");
-
-    else
-      printk("Error setting UART callback: %d", err);
-  }
-
-  if (err < 0) {
-    if (err == -ENOTSUP) {
-      printk("Interrupt-driven UART API support not enabled");
-    } else if (err == -ENOSYS) {
-      printk("UART device does not support interrupt-driven API");
-    } else {
-      printk("Error setting UART callback: %d", err);
-    }
-  }
-
   // timer for arm_joints
-  k_timer_start(&my_timer, K_USEC(100), K_USEC(20));
+  // k_timer_start(&my_timer, K_USEC(100), K_USEC(20));
 
   printk("Initialization completed successfully!\n");
+
   uart_irq_rx_enable(uart_dev);
 
+  /* start running work queue*/
+  k_work_queue_start(work_q, stack_area, K_THREAD_STACK_SIZEOF(stack_area),
+                     PRIORITY, NULL);
+
   while (true) {
-    k_msgq_get(&uart_msgq, &packet, K_MSEC(4));
-    ch = parse_buffer(packet);
-    drive_timestamp = k_uptime_get();
-
-    /*for (int i = 0; i < 10; i++) {*/
-    /*  printk("%d \t", ch[i]);*/
-    /*}*/
-    /*printk("\n");*/
-    /**/
-    actuator_write(7, ch[7]); // ABox
-
-    if (ch[8] > 1000) {
-
-      actuator_write(8, neutral); // Y of YPR
-      actuator_write(9, neutral); // P of YPR
-
-      actuator_write(12, neutral); // Gripper1
-      actuator_write(13, neutral); // Gripper2
-      actuator_write(14, neutral); // R of YPR
-      cmd.angular_z = sbus_velocity_interpolation(ch[0], angular_velocity_range,
-                                                  channel_range);
-      cmd.linear_x = sbus_velocity_interpolation(ch[1], linear_velocity_range,
-                                                 channel_range);
-
-      err = diffdrive_update(drive, cmd, time_last_drive_update);
-
-      actuator_write(2, ch[2]);
-      actuator_write(3, ch[3]);
-    } else {
-      cmd.angular_z = sbus_velocity_interpolation(
-          neutral, angular_velocity_range, channel_range);
-      cmd.linear_x = sbus_velocity_interpolation(neutral, linear_velocity_range,
-                                                 channel_range);
-
-      err = diffdrive_update(drive, cmd, time_last_drive_update);
-
-      actuator_write(2, neutral);
-      actuator_write(3, neutral);
-
-      actuator_write(8, ch[0]); // Y of YPR
-      actuator_write(9, ch[1]); // P of YPR
-
-      actuator_write(12, ch[2]); // Gripper1
-      actuator_write(13, ch[3]); // Gripper2
-      actuator_write(14, ch[9]); // R of YPR
-
-      time_last_drive_update = k_uptime_get() - drive_timestamp;
-    }
   }
-}
