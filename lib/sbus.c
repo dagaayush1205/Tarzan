@@ -1,8 +1,7 @@
 #include <stdint.h>
 
-uint16_t channel[16] = {0};
-// creating 11 bit channel
-uint16_t *parse_buffer(uint8_t buff[]) {
+/* parsing sbus packet to 11bit channels */
+void parse_buffer(uint8_t buff[25], uint16_t channel[16]) {
 
   // masking byte shiftings bits (value in hexa '0x07FF')
   uint16_t mask = 0x7ff;
@@ -24,7 +23,6 @@ uint16_t *parse_buffer(uint8_t buff[]) {
   channel[13] = ((buff[18] >> 7 | buff[19] << 1 | buff[20] << 9) & mask);
   channel[14] = ((buff[20] >> 2 | buff[21] << 6) & mask);
   channel[15] = ((buff[21] >> 5 | buff[22] << 3) & mask);
-  return channel;
 }
 /*
 // to check parity byte
