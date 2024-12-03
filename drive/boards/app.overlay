@@ -92,7 +92,7 @@
 	aliases {
 			debug-uart = &usart2;
 			mother-uart = &usart6;
-      			test-uart = &usart3;
+     	test-uart = &usart3;
 			stepper-motor1 = &stepper_motor_1; 
 			stepper-motor2 = &stepper_motor_2; 
 			stepper-motor3 = &stepper_motor_3;
@@ -100,9 +100,6 @@
 			imu-upper-joint = &sl_imu;
 			imu-turn-table = &tt_imu; 
 			imu-pr = &pr_imu;
-      			stepper-motor1 = &stepper_motor_1; 
-			stepper-motor2 = &stepper_motor_2; 
-			stepper-motor3 = &stepper_motor_3;
 			limit-switch = &switch1;
 	};
 	chosen {
