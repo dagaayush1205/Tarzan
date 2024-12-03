@@ -5,7 +5,6 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-
 #include <kyvernitis/lib/kyvernitis.h>
 
 #include <Tarzan/lib/drive.h>
@@ -17,6 +16,13 @@ static const struct device *const uart_dev =
 static const struct device *const uart_debug =
     DEVICE_DT_GET(DT_ALIAS(debug_uart)); // debugger
 
+const struct device *const base = DEVICE_DT_GET(DT_ALIAS(imu_turn_table));
+# define M_PI  3.14159265358979323846
+
+float accel_offset[3], gyro_offset[3];
+float angle = 0, k = 0.50; // k here is tau
+float target_angle = -45;
+uint64_t prev_time = 0;
 // DT spec for stepper
 const struct stepper_motor stepper[3] = {
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), dir_gpios),
@@ -33,41 +39,102 @@ K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t), 250, 1);
 uint16_t channel_range[] = {0, 950, 2047};
 
 uint16_t *ch;
-uint8_t packet[25];
 int pos[3] = {0};
 uint64_t time, last_time = 0.0;
 float stepInterval;
-void serial_cb(const struct device *dev, void *user_data) {
-  ARG_UNUSED(user_data);
-  uint8_t start = 0x0F;
-  uint8_t c;
+float true_acc[3] = {0, 0, -9.8};
+float true_gyro[3] = {0, 0, 0};
 
-  if (!uart_irq_update(uart_dev))
-    return;
-  if (!uart_irq_rx_ready(uart_dev))
-    return;
+int calibration(const struct device *dev) {
+  struct sensor_value accel[3];
+  struct sensor_value gyro[3];
 
-  while (uart_fifo_read(uart_dev, &c, 1) == 1) {
-    if (c != start)
-      continue;
-    packet[0] = c;
-    if (uart_fifo_read(uart_dev, packet + 1, 24) == 24)
-      k_msgq_put(&uart_msgq, packet, K_NO_WAIT);
+  for (int i = 0; i < 1000; i++) {
+    
+    int rc = sensor_sample_fetch(dev);
+  
+    if (rc == 0)
+      rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+    
+    if (rc == 0)
+      rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
+    
+    for (int i = 0; i < 3; i++) {
+      accel_offset[i] += (sensor_value_to_double(&accel[i]) - true_acc[i]);
+      gyro_offset[i] += (sensor_value_to_double(&gyro[i]) - true_gyro[i]); 
+    }
+    k_sleep(K_MSEC(1));
   }
+  for (int i = 0; i < 3; i++) {
+    accel_offset[i] = accel_offset[i] / 1000.0;
+    gyro_offset[i] = gyro_offset[i] / 1000.0;
+  }
+
+  printk("Calibration done\n");
+  //printk("accel_offset: %0.4f %0.4f %0.4f\n", accel_offset[0], accel_offset[1], accel_offset[2]);
+  //printk("gyroOffset: %0.4f %0.4f %0.4f\n", gyro_offset[0], gyro_offset[1], gyro_offset[2]);
+  
+  return 0;
 }
 
-void setSpeed(float speed) {
-  if (speed = 0.0)
-    stepInterval = 0.0;
-  else
-    stepInterval = (1000000 / speed);
+static int process_mpu6050(const struct device *dev, int n) {
+  
+  struct sensor_value accel[3];
+  struct sensor_value gyro[3];
+  
+  uint64_t current_time = k_uptime_get();
+  
+  float dt = (current_time - prev_time) / 1000.0;
+  
+  prev_time = current_time;
+  
+  float a[3], g[3];
+  
+  int rc = sensor_sample_fetch(dev);
+
+  if (rc == 0)
+    rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+  if (rc == 0)
+    rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
+
+  a[0] = sensor_value_to_double(&accel[0]) - accel_offset[0];
+  a[1] = sensor_value_to_double(&accel[1]) - accel_offset[1];
+  a[2] = sensor_value_to_double(&accel[2]) - accel_offset[2];
+  g[0] = sensor_value_to_double(&gyro[0]) - gyro_offset[0];
+  g[1] = sensor_value_to_double(&gyro[1]) - gyro_offset[1];
+  g[3] = sensor_value_to_double(&gyro[2]) - gyro_offset[2];
+
+  if (rc == 0) {
+   // printk("%d accel % .1f % .1f % .1f m/s/s\t gyro % .1f % .1f % .1f rad/s\n", n, a[0], a[1], a[2], g[0], g[1], g[2]);
+  
+    float pitch_acc = (180 * atan2(-1 * a[0], sqrt(pow(a[1], 2) + pow(a[2], 2))) /M_PI);
+    angle = k * (angle + (g[1]) * (dt)) + (1 - k) * pitch_acc;
+    printk("ANGLE: % .0f\n", angle);
+    if(target_angle > angle+5){
+      ch[0]=1500;
+      ch[1]=1500;
+      printk("Move up\n");
+    }
+    else if(target_angle < angle-5){
+      ch[0]=500; 
+      ch[1]=500; 
+      printk("Move down\n");
+    }
+    else {
+        ch[0]=940;
+        ch[1]=940; 
+      printk("target angle reached\n");
+    }
+
+  } else
+    printk("sample fetch/get failed: %d\n", rc);
+  return rc;
 }
 
 int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd,
                         int pos) {
 
   if (abs(cmd - channel_range[1]) < 200) {
-    // gpio_pin_set_dt(&(motor->step),0);
     return pos;
   }
 
@@ -96,53 +163,26 @@ int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd,
 }
 
 void arm_joints(struct k_work *work) {
-  uint16_t cmd[2] = {ch[0], ch[1]};
-  // printk("%4d %4d\n",cmd[0],cmd[1]);
-  // setSpeed(500000.0);
-  for (int i = 0; i < 2; i++) {
-    //	 time[i] = k_uptime_ticks();
-    //	 if ((time[i] - last_time[i]) >= 1) {
+  uint16_t cmd[2] = {1500, 500};
+  for (int i=0 ; i<2; i++) {
     pos[i] = Stepper_motor_write(&stepper[i], cmd[i], pos[i]);
-    //		 last_time[i] = time[i];
-    //	}
+    }
   }
-}
 K_WORK_DEFINE(my_work, arm_joints);
-
-void my_timer_handler(struct k_timer *dummy) { k_work_submit(&my_work); }
+void my_timer_handler(struct k_timer *dummy) { 
+  k_work_submit(&my_work); }
 K_TIMER_DEFINE(my_timer, my_timer_handler, NULL);
 
 int main() {
 
+  printk("This is tarzan version %s\nFile: %s\n", GIT_BRANCH_NAME, __FILE__);
   int err;
-  if (!device_is_ready(uart_dev)) {
-    LOG_ERR("UART device not ready");
+  if (!device_is_ready(base)) {
+    printk("Device %s is not ready\n", base->name);
+    return 0;
   }
-
-  err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
-
-  if (err < 0) {
-    if (err == -ENOTSUP) {
-      printk("Interrupt-driven UART API support not enabled");
-    } else if (err == -ENOSYS) {
-      printk("UART device does not support interrupt-driven API");
-    } else {
-      printk("Error setting UART callback: %d", err);
-    }
-  }
-
-  if (err < 0) {
-    if (err == -ENOTSUP)
-      printk("Interrupt-driven UART API support not enabled");
-
-    else if (err == -ENOSYS)
-      printk("UART device does not support interrupt-driven API");
-
-    else
-      printk("Error setting UART callback: %d", err);
-  }
-
-  uart_irq_rx_enable(uart_dev);
+  printk("Calibrating...\n");
+  calibration(base); 
 
   for (size_t i = 0U; i < 3; i++) {
     if (!gpio_is_ready_dt(&stepper[i].dir)) {
@@ -168,15 +208,9 @@ int main() {
     }
   }
 
-  LOG_INF("Initialization completed successfully!");
-
-  k_timer_start(&my_timer, K_USEC(60), K_USEC(15));
-  printk("Initialization completed successfully!");
-  while (true) {
-    k_msgq_get(&uart_msgq, &packet, K_MSEC(20));
-    ch = parse_buffer(packet);
-    for (int i = 0; i < 16; i++)
-      printk("%d\t", ch[0]);
-    printk("\n");
+  printk("Initialization completed successfully!\n");
+  k_timer_start(&my_timer, K_USEC(120), K_USEC(20));
+  while(true){
+    process_mpu6050(base, 3); 
   }
 }
