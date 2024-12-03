@@ -14,7 +14,7 @@ const struct device *const end = DEVICE_DT_GET(DT_ALIAS(imu_pr));
 
 float accel_offset[3], gyro_offset[3];
 float angle = 0, k = 0.50; // k here is tau
-
+float target_angle = -45;
 uint64_t prev_time = 0;
 
 struct joint {
@@ -86,7 +86,7 @@ static int process_mpu6050(const struct device *dev, int n) {
   g[3] = sensor_value_to_double(&gyro[2]) - gyro_offset[2];
 
   if (rc == 0) {
-    printk("%d accel % .1f % .1f % .1f m/s/s\t gyro % .1f % .1f % .1f rad/s\n", n, a[0], a[1], a[2], g[0], g[1], g[2]);
+   // printk("%d accel % .1f % .1f % .1f m/s/s\t gyro % .1f % .1f % .1f rad/s\n", n, a[0], a[1], a[2], g[0], g[1], g[2]);
   
     float pitch_acc = (180 * atan2(-1 * a[0], sqrt(pow(a[1], 2) + pow(a[2], 2))) /M_PI);
     angle = k * (angle + (g[1]) * (dt)) + (1 - k) * pitch_acc;
@@ -128,6 +128,12 @@ int main() {
 //    process_mpu6050(lower, 1);
 //    process_mpu6050(upper, 2);
     process_mpu6050(base, 3);
+    if(target_angle > angle+5)
+      printk("Move up\n");
+    else if(target_angle < angle-5)
+      printk("Move down\n");
+    else printk("target angle reached\n");
+
 //    process_mpu6050(end, 4);
     k_sleep(K_MSEC(20));
   }
