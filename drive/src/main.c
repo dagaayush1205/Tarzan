@@ -63,12 +63,81 @@ uint16_t channel_range[] = {172, 1811};
 int pos[2] = {0};
 uint16_t *ch; // to store sbus channels
 
+<<<<<<< Updated upstream
 /* interrupt to fill sbus data in queue */
+=======
+int Stepper_motor_write(const struct stepper_motor *motor, uint16_t ch,
+                        int pos) {
+
+  if (abs(ch - 992) < 200) {
+    return pos;
+  }
+  if (ch > 1004) {
+    gpio_pin_set_dt(&(motor->dir), 1);
+    pos += 1; // clockwise
+  } else {
+    gpio_pin_set_dt(&(motor->dir), 0);
+    pos -= 1;
+  } // anticlockwise
+  switch (pos & 0x03) {
+  case 0:
+    gpio_pin_set_dt(&(motor->step), 0);
+    break;
+  case 1:
+    gpio_pin_set_dt(&(motor->step), 1);
+    break;
+  case 2:
+    gpio_pin_set_dt(&(motor->step), 1);
+    break;
+  case 3:
+    gpio_pin_set_dt(&(motor->step), 0);
+    break;
+  }
+  return pos;
+}
+void arm_joints(struct k_work *work) {
+  uint16_t cmd[2] = {ch[4], ch[5]};
+  // int pos[2];
+  for (int i = 0; i < 2; i++) {
+    //    printk("stepper\n");
+    pos[i] = Stepper_motor_write(&stepper[i], cmd[i], pos[i]);
+    // last_time[i] = time[i];
+  }
+}
+K_WORK_DEFINE(my_work, arm_joints);
+
+void my_timer_handler(struct k_timer *dummy) { k_work_submit(&my_work); }
+K_TIMER_DEFINE(my_timer, my_timer_handler, NULL);
+
+int sbus_parsing() {
+  uint8_t packet[25], packet_pos = 0, start = 0x0f, message = 0;
+
+  k_msgq_get(&uart_msgq, &message, K_MSEC(4));
+
+  if (message == start) {
+    for (packet_pos = 0; packet_pos < 25; packet_pos++) {
+      packet[packet_pos] = message;
+      k_msgq_get(&uart_msgq, &message, K_MSEC(4));
+      printk("Message was found");
+    }
+    ch = parse_buffer(packet);
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+>>>>>>> Stashed changes
 void serial_cb(const struct device *dev, void *user_data) {
   ARG_UNUSED(user_data);
   uint8_t c;
+<<<<<<< Updated upstream
 
   if (!uart_irq_update(uart_dev))
+=======
+  printk("Entered Serial Callback");
+  if (!uart_irq_update(uart_dev)) {
+>>>>>>> Stashed changes
     return;
   if (!uart_irq_rx_ready(uart_dev))
     return;
