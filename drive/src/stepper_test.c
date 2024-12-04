@@ -9,7 +9,7 @@
 
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
-
+//110101000
 LOG_MODULE_REGISTER(stepper_test, CONFIG_LOG_DEFAULT_LEVEL);
 static const struct device *const uart_dev =
     DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
@@ -20,8 +20,8 @@ const struct device *const base = DEVICE_DT_GET(DT_ALIAS(imu_turn_table));
 # define M_PI  3.14159265358979323846
 
 float accel_offset[3], gyro_offset[3];
-float angle = 0, k = 0.50; // k here is tau
-float target_angle = -45;
+float angle = 0, k = 0.89; // k here is tau
+float target_angle = -35;
 uint64_t prev_time = 0;
 // DT spec for stepper
 const struct stepper_motor stepper[3] = {
@@ -71,8 +71,8 @@ int calibration(const struct device *dev) {
   }
 
   printk("Calibration done\n");
-  //printk("accel_offset: %0.4f %0.4f %0.4f\n", accel_offset[0], accel_offset[1], accel_offset[2]);
-  //printk("gyroOffset: %0.4f %0.4f %0.4f\n", gyro_offset[0], gyro_offset[1], gyro_offset[2]);
+  printk("accel_offset: %0.4f %0.4f %0.4f\n", accel_offset[0], accel_offset[1], accel_offset[2]);
+  printk("gyroOffset: %0.4f %0.4f %0.4f\n", gyro_offset[0], gyro_offset[1], gyro_offset[2]);
   
   return 0;
 }
@@ -113,12 +113,12 @@ static int process_mpu6050(const struct device *dev, int n) {
     if(target_angle > angle+2){
       ch[0]=1500;
       ch[1]=1500;
-      printk("Move up\n");
+      printk("Move down\n");
     }
     else if(target_angle < angle-2){
       ch[0]=500; 
       ch[1]=500; 
-      printk("Move down\n");
+      printk("Move up\n");
     }
     else {
         ch[0]=940;
@@ -163,7 +163,7 @@ int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd,
 }
 
 void arm_joints(struct k_work *work) {
-  uint16_t cmd[2] = {1500, 500};
+  uint16_t cmd[2] = {ch[0], ch[1]};
   for (int i=0 ; i<2; i++) {
     pos[i] = Stepper_motor_write(&stepper[i], cmd[i], pos[i]);
     }
@@ -209,7 +209,7 @@ int main() {
   }
 
   printk("Initialization completed successfully!\n");
-  k_timer_start(&my_timer, K_USEC(120), K_USEC(20));
+  k_timer_start(&my_timer, K_USEC(120), K_USEC(50));
   while(true){
     process_mpu6050(base, 3); 
   }
