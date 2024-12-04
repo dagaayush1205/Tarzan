@@ -4,11 +4,11 @@
 
 #include <Tarzan/lib/drive.h>
 
-// interpolates sbus channel value to velocity
-// param :
-// channel - sbus channel
-// velocity_range - velocity range for interpolation
-// channel_range - sbus channel range
+/* interpolates sbus channel value to velocity
+ *param :
+ *channel - sbus channel
+ *velocity_range - velocity range for interpolation
+ *channel_range - sbus channel range */
 float sbus_velocity_interpolation(uint16_t channel, float *velocity_range,
                                   uint16_t *channel_range) {
 
@@ -30,11 +30,11 @@ float sbus_velocity_interpolation(uint16_t channel, float *velocity_range,
   return vel_interp;
 }
 
-// interpolates sbus channel value to pwm
-// param :
-// channel - sbus channel value
-// pwm_range - pwm range for interpolation
-// channel_range - sbus channel range
+/* interpolates sbus channel value to pwm
+ * param :
+ * channel - sbus channel value
+ * pwm_range - pwm range for interpolation
+ * channel_range - sbus channel range */
 uint32_t sbus_pwm_interpolation(uint16_t channel, uint32_t *pwm_range,
                                 uint16_t *channel_range) {
 
