@@ -110,12 +110,12 @@ static int process_mpu6050(const struct device *dev, int n) {
     float pitch_acc = (180 * atan2(-1 * a[0], sqrt(pow(a[1], 2) + pow(a[2], 2))) /M_PI);
     angle = k * (angle + (g[1]) * (dt)) + (1 - k) * pitch_acc;
     printk("ANGLE: % .0f\n", angle);
-    if(target_angle > angle+5){
+    if(target_angle > angle+2){
       ch[0]=1500;
       ch[1]=1500;
       printk("Move up\n");
     }
-    else if(target_angle < angle-5){
+    else if(target_angle < angle-2){
       ch[0]=500; 
       ch[1]=500; 
       printk("Move down\n");
