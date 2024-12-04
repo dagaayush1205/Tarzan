@@ -13,7 +13,7 @@
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
 
-#define STACK_SIZE 512
+#define STACK_SIZE 1024
 #define PRIORITY 2
 
 /* workq dedicated thread */
@@ -25,22 +25,22 @@ static const struct device *const uart_dev =
 // creating mssg queue to store data
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
 
-uint16_t channel[16], packet[25];
+uint16_t channel[16];
+uint8_t packet[25];
 int read;
 
 void sbus_parsing(struct k_work *sbus_work) {
-  uint8_t packet[25] = {0};
-  k_msgq_get(&uart_msgq, &packet, K_MSEC(4));
-  parse_buffer(packet, channel);
-  for (int i = 0; i < 10; i++)
+  uint8_t p[25] = {0};
+  k_msgq_get(&uart_msgq, &p, K_NO_WAIT);
+  parse_buffer(p, channel);
+  for (int i = 0; i < 5; i++)
     printk("%u\t", channel[i]);
   printk("\n");
 }
 K_WORK_DEFINE(work, sbus_parsing);
 void serial_cb(const struct device *dev, void *user_data) {
   ARG_UNUSED(user_data);
-  uint8_t c, packet[25];
-  int value;
+  uint8_t c;
   if (!uart_irq_update(uart_dev))
     return;
   if (!uart_irq_rx_ready(uart_dev))
@@ -52,7 +52,7 @@ void serial_cb(const struct device *dev, void *user_data) {
   }
   if (read == 25) {
     k_msgq_put(&uart_msgq, &packet, K_NO_WAIT);
-    k_work_submit(&work);
+    k_work_submit_to_queue(&work_q, &work);
     read = 0;
   }
 }
@@ -61,6 +61,7 @@ int main() {
 
   int err;
 
+  k_work_queue_init(&work_q);
   // device ready chceks
   if (!device_is_ready(uart_dev)) {
     printk("UART device not ready");
@@ -80,6 +81,8 @@ int main() {
       printk("Error setting UART callback: %d", err);
   }
 
+  k_work_queue_start(&work_q, stack_area, K_THREAD_STACK_SIZEOF(stack_area),
+                     PRIORITY, NULL);
   // enable uart device for communication
   uart_irq_rx_enable(uart_dev);
 
