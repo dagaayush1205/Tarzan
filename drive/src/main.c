@@ -63,9 +63,6 @@ uint16_t channel_range[] = {172, 1811};
 int pos[2] = {0};
 uint16_t *ch; // to store sbus channels
 
-<<<<<<< Updated upstream
-/* interrupt to fill sbus data in queue */
-=======
 int Stepper_motor_write(const struct stepper_motor *motor, uint16_t ch,
                         int pos) {
 
@@ -127,17 +124,11 @@ int sbus_parsing() {
   }
 }
 
->>>>>>> Stashed changes
 void serial_cb(const struct device *dev, void *user_data) {
   ARG_UNUSED(user_data);
   uint8_t c;
-<<<<<<< Updated upstream
 
   if (!uart_irq_update(uart_dev))
-=======
-  printk("Entered Serial Callback");
-  if (!uart_irq_update(uart_dev)) {
->>>>>>> Stashed changes
     return;
   if (!uart_irq_rx_ready(uart_dev))
     return;
