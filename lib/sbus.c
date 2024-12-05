@@ -1,6 +1,9 @@
 #include <stdint.h>
 
-/* parsing sbus packet to 11bit channels */
+/* parsing sbus packet to 11bit channels
+ * param:
+ * buff: 25 bytes message from sbus
+ * channel: parsed channels */
 void parse_buffer(uint8_t buff[25], uint16_t channel[16]) {
 
   // masking byte shiftings bits (value in hexa '0x07FF')
@@ -24,12 +27,16 @@ void parse_buffer(uint8_t buff[25], uint16_t channel[16]) {
   channel[14] = ((buff[20] >> 2 | buff[21] << 6) & mask);
   channel[15] = ((buff[21] >> 5 | buff[22] << 3) & mask);
 }
-int parity_checker(int parity) {
-  uint8_t failsafe, frame_lost, bit0, bit1, ct;
+/*parity checking for sbus packets
+ * param:
+ * parity_byte: checking sbus parity
+ * returns 0 if packet is correct*/
+int parity_checker(int parity_byte) {
+  uint8_t bit0, bit1;
 
   // extracting first two bit of parity byte
-  bit0 = parity >> 7;
-  bit1 = (parity >> 6) << 1;
+  bit0 = parity_byte >> 7;
+  bit1 = (parity_byte >> 6) << 1;
 
   if (bit0 == 0 && bit1 == 0)
     return 0;
