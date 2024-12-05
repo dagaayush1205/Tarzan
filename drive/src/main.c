@@ -191,7 +191,7 @@ K_TIMER_DEFINE(main_timer, main_timer_handler, NULL);
 
 int main() {
 
-  printk("Tarzan version %s\nFile: %s\n", GIT_COMMIT_ID, __FILE__);
+  printk("Tarzan version %s\nFile: %s\n", GIT_BRANCH_NAME, __FILE__);
   /* initializing work queue */
   k_work_queue_init(&work_q);
   /* initializing work items */
