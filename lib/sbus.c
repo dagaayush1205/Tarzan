@@ -24,20 +24,16 @@ void parse_buffer(uint8_t buff[25], uint16_t channel[16]) {
   channel[14] = ((buff[20] >> 2 | buff[21] << 6) & mask);
   channel[15] = ((buff[21] >> 5 | buff[22] << 3) & mask);
 }
-/*
-// to check parity byte
-int parity_checker(int parity)
-{
-        uint8_t failsafe, frame_lost, bit0, bit1, ct;
+int parity_checker(int parity) {
+  uint8_t failsafe, frame_lost, bit0, bit1, ct;
 
-        // extracting first two bit of parity byte
-        bit0 = parity>>7;
-        bit1 = (parity>>6)<<1;
+  // extracting first two bit of parity byte
+  bit0 = parity >> 7;
+  bit1 = (parity >> 6) << 1;
 
-        if (bit0 == 0 && bit1 == 0)
-                return 0;
+  if (bit0 == 0 && bit1 == 0)
+    return 0;
 
-        else
-                return 1;
+  else
+    return 1;
 }
-*/

@@ -68,9 +68,9 @@ struct arm_arg {
   int pos[3];
 } arm;
 
-uint16_t channel[16]; // to store sbus channels
-uint8_t packet[25];   // to store sbus packets
-int bytes_read;       // to store number of sbus bytes read
+uint16_t channel[16] = {0}; // to store sbus channels
+uint8_t packet[25];         // to store sbus packets
+int bytes_read;             // to store number of sbus bytes read
 float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[] = {-5.5, 5.5};
 float wheel_velocity_range[] = {-10.0, 10.0};
@@ -100,11 +100,18 @@ void serial_cb(const struct device *dev, void *user_data) {
 /* work handler to form sbus packet and return sbus channels */
 void sbus_work_handler(struct k_work *sbus_work_ptr) {
   uint8_t buffer[25] = {0};
+  int err;
   k_msgq_get(&uart_msgq, buffer, K_NO_WAIT);
-  parse_buffer(buffer, channel);
-  // for (int i = 0; i < 10; i++)
-  //   printk("%u\t", channel[i]);
-  // printk("\n");
+  err = parity_checker(packet[23]);
+  if (err == 1) {
+    printk("error\n");
+    return;
+  } else {
+    parse_buffer(buffer, channel);
+    for (int i = 0; i < 8; i++)
+      printk("%u\t", channel[i]);
+    printk("\n");
+  }
 }
 
 int velocity_callback(const float *velocity_buffer, int buffer_len,
@@ -113,18 +120,16 @@ int velocity_callback(const float *velocity_buffer, int buffer_len,
     return 1;
   }
 
-  const int i = 0;
-  if (pwm_motor_write(&(motor[i]), velocity_pwm_interpolation(
-                                       *(velocity_buffer + i),
-                                       wheel_velocity_range, pwm_range))) {
-    printk("Drive: Unable to write pwm pulse to Left : %d", i);
+  if (pwm_motor_write(&(motor[0]), velocity_pwm_interpolation(
+                                       *(velocity_buffer), wheel_velocity_range,
+                                       pwm_range))) {
+    printk("Drive: Unable to write pwm pulse to Left");
     return 1;
   }
-  if (pwm_motor_write(
-          &(motor[i + 1]),
-          velocity_pwm_interpolation(*(velocity_buffer + wheels_per_side + i),
-                                     wheel_velocity_range, pwm_range))) {
-    printk("Drive: Unable to write pwm pulse to Right : %d", i);
+  if (pwm_motor_write(&(motor[1]), velocity_pwm_interpolation(
+                                       *(velocity_buffer + wheels_per_side + 1),
+                                       wheel_velocity_range, pwm_range))) {
+    printk("Drive: Unable to write pwm pulse to Right");
     return 1;
   }
   return 0;
@@ -145,9 +150,10 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
       channel[0], angular_velocity_range, channel_range);
   drive_info->cmd.linear_x = sbus_velocity_interpolation(
       channel[1], linear_velocity_range, channel_range);
-  int err = diffdrive_update(drive_info->drive_init, drive_info->cmd,
-                             drive_info->time_last_drive_update);
+  diffdrive_update(drive_info->drive_init, drive_info->cmd,
+                   drive_info->time_last_drive_update);
   drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
+  // linear actuator write
   if (pwm_motor_write(&(motor[2]), sbus_pwm_interpolation(channel[2], pwm_range,
                                                           channel_range)))
     printk("Linear Actuator: Unable to write at linear actuator");
@@ -177,11 +183,11 @@ void arm_work_handler(struct k_work *arm_work_ptr) {
   }
 }
 
-void stepper_timer_handler(struct k_timer *dummy) {
+void main_timer_handler(struct k_timer *main_timer_ptr) {
   k_work_submit_to_queue(&work_q, &(arm.arm_work_item));
-  k_work_submit(&(drive.drive_work_item));
+  k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
 }
-K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
+K_TIMER_DEFINE(main_timer, main_timer_handler, NULL);
 
 int main() {
 
@@ -267,5 +273,5 @@ int main() {
                      PRIORITY, NULL);
   /* enable interrupt to receive sbus data */
   uart_irq_rx_enable(uart_dev);
-  k_timer_start(&stepper_timer, K_MSEC(1), K_MSEC(10));
+  k_timer_start(&main_timer, K_SECONDS(1), K_MSEC(50));
 }
