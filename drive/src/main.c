@@ -61,7 +61,6 @@ struct drive_arg {
   struct DiffDriveTwist cmd;
   struct DiffDrive *drive_init;
   uint64_t time_last_drive_update;
-  uint64_t last_time;
 } drive;
 /* struct for arm variables */
 struct arm_arg {
@@ -103,6 +102,7 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
   uint8_t buffer[25] = {0};
   k_msgq_get(&uart_msgq, buffer, K_NO_WAIT);
   parse_buffer(buffer, channel);
+  k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
   for (int i = 0; i < 10; i++)
     printk("%u\t", channel[i]);
   printk("\n");
@@ -194,27 +194,30 @@ int main() {
   k_work_init(&sbus_work_item, sbus_work_handler);
   k_work_init(&(drive.drive_work_item), drive_work_handler);
   k_work_init(&(arm.arm_work_item), arm_work_handler);
-  // /* initialize drive */
-  // drive.drive_init = diffdrive_init(&(drive.drive_config), feedback_callback,
-  //                                   velocity_callback);
-  // /* diffrential drive configs */
-  // drive.drive_config = {
-  //     .wheel_separation = 0.77f,
-  //     .wheel_separation_multiplier = 1,
-  //     .wheel_radius = 0.15f,
-  //     .wheels_per_side = 2,
-  //     .command_timeout_seconds = 2,
-  //     .left_wheel_radius_multiplier = 1,
-  //     .right_wheel_radius_multiplier = 1,
-  //     .update_type = POSITION_FEEDBACK,
-  // };
-  // /* angular and linear velocity */
-  // drive.cmd = {
-  //     .angular_z = 0,
-  //     .linear_x = 0,
-  // };
-  /* initialize drive */
-  drive.time_last_drive_update = 0;
+
+  /* initializing drive configs */
+  struct drive_arg drive = {
+      .drive_config =
+          {
+              .wheel_separation = 0.77f,
+              .wheel_separation_multiplier = 1,
+              .wheel_radius = 0.15f,
+              .wheels_per_side = 2,
+              .command_timeout_seconds = 2,
+              .left_wheel_radius_multiplier = 1,
+              .right_wheel_radius_multiplier = 1,
+              .update_type = POSITION_FEEDBACK,
+          },
+      .cmd =
+          {
+              .angular_z = 0,
+              .linear_x = 0,
+          },
+      .drive_init = diffdrive_init(&(drive.drive_config), feedback_callback,
+                                   velocity_callback),
+      .time_last_drive_update = 0,
+  };
+
   /* uart ready check */
   if (!device_is_ready(uart_dev)) {
     printk("UART device not ready");
