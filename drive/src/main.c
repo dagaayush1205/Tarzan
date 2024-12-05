@@ -1,4 +1,3 @@
-#include "zephyr/dsp/print_format.h"
 #include "zephyr/kernel/thread_stack.h"
 #include "zephyr/sys/printk.h"
 #include "zephyr/sys/util.h"
@@ -24,7 +23,7 @@
 
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
-
+int a;
 /* msgq poll event */
 // struct k_poll_event msgq_poll = K_POLL_EVENT_STATIC_INITIALIZER(
 //     K_POLL_TYPE_MSGQ_DATA_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &uart_msgq, 0);
@@ -183,6 +182,7 @@ void arm_work_handler(struct k_work *arm_work_ptr) {
   }
 }
 
+/* main timer to submit work items */
 void main_timer_handler(struct k_timer *main_timer_ptr) {
   k_work_submit_to_queue(&work_q, &(arm.arm_work_item));
   k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
@@ -191,8 +191,7 @@ K_TIMER_DEFINE(main_timer, main_timer_handler, NULL);
 
 int main() {
 
-  printk("This is tarzan version %s\nFile: %s\n", GIT_BRANCH_NAME, __FILE__);
-
+  printk("Tarzan version %s\nFile: %s\n", GIT_COMMIT_ID, __FILE__);
   /* initializing work queue */
   k_work_queue_init(&work_q);
   /* initializing work items */
@@ -245,11 +244,9 @@ int main() {
   for (size_t i = 0U; i < 3; i++) {
     if (!gpio_is_ready_dt(&stepper[i].dir)) {
       printk("Stepper Motor %d: Dir %d is not ready", i, stepper[i].dir.pin);
-      return 0;
     }
     if (!gpio_is_ready_dt(&stepper[i].step)) {
       printk("Stepper Motor %d: Dir %d is not ready", i, stepper[i].step.pin);
-      return 0;
     }
   }
   /* configure stepper gpio for output */
@@ -257,12 +254,10 @@ int main() {
     if (gpio_pin_configure_dt(&(stepper[i].dir), GPIO_OUTPUT_INACTIVE)) {
       printk("Error: Stepper motor %d: Dir %d not configured", i,
              stepper[i].dir.pin);
-      return 0;
     }
     if (gpio_pin_configure_dt(&(stepper[i].step), GPIO_OUTPUT_INACTIVE)) {
       printk("Error: Stepper motor %d: Dir %d not configured", i,
              stepper[i].step.pin);
-      return 0;
     }
   }
 
