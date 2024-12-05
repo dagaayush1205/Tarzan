@@ -19,7 +19,7 @@
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
 
-#define STACK_SIZE 1024
+#define STACK_SIZE 4096
 #define PRIORITY 2
 
 /* defining sbus message queue*/
@@ -102,10 +102,9 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
   uint8_t buffer[25] = {0};
   k_msgq_get(&uart_msgq, buffer, K_NO_WAIT);
   parse_buffer(buffer, channel);
-  k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
-  for (int i = 0; i < 10; i++)
-    printk("%u\t", channel[i]);
-  printk("\n");
+  // for (int i = 0; i < 10; i++)
+  //   printk("%u\t", channel[i]);
+  // printk("\n");
 }
 
 int velocity_callback(const float *velocity_buffer, int buffer_len,
@@ -146,10 +145,9 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
       channel[0], angular_velocity_range, channel_range);
   drive_info->cmd.linear_x = sbus_velocity_interpolation(
       channel[1], linear_velocity_range, channel_range);
-  diffdrive_update(drive_info->drive_init, drive_info->cmd,
-                   drive_info->time_last_drive_update);
+  int err = diffdrive_update(drive_info->drive_init, drive_info->cmd,
+                             drive_info->time_last_drive_update);
   drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
-  // linear actuator write
   if (pwm_motor_write(&(motor[2]), sbus_pwm_interpolation(channel[2], pwm_range,
                                                           channel_range)))
     printk("Linear Actuator: Unable to write at linear actuator");
@@ -181,6 +179,7 @@ void arm_work_handler(struct k_work *arm_work_ptr) {
 
 void stepper_timer_handler(struct k_timer *dummy) {
   k_work_submit_to_queue(&work_q, &(arm.arm_work_item));
+  k_work_submit(&(drive.drive_work_item));
 }
 K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
 
@@ -196,27 +195,19 @@ int main() {
   k_work_init(&(arm.arm_work_item), arm_work_handler);
 
   /* initializing drive configs */
-  struct drive_arg drive = {
-      .drive_config =
-          {
-              .wheel_separation = 0.77f,
-              .wheel_separation_multiplier = 1,
-              .wheel_radius = 0.15f,
-              .wheels_per_side = 2,
-              .command_timeout_seconds = 2,
-              .left_wheel_radius_multiplier = 1,
-              .right_wheel_radius_multiplier = 1,
-              .update_type = POSITION_FEEDBACK,
-          },
-      .cmd =
-          {
-              .angular_z = 0,
-              .linear_x = 0,
-          },
-      .drive_init = diffdrive_init(&(drive.drive_config), feedback_callback,
-                                   velocity_callback),
-      .time_last_drive_update = 0,
+  const struct DiffDriveConfig tmp_drive_config = {
+      .wheel_separation = 0.77f,
+      .wheel_separation_multiplier = 1,
+      .wheel_radius = 0.15f,
+      .wheels_per_side = 2,
+      .command_timeout_seconds = 2,
+      .left_wheel_radius_multiplier = 1,
+      .right_wheel_radius_multiplier = 1,
+      .update_type = POSITION_FEEDBACK,
   };
+  drive.drive_config = tmp_drive_config;
+  drive.drive_init = diffdrive_init(&(drive.drive_config), feedback_callback,
+                                    velocity_callback);
 
   /* uart ready check */
   if (!device_is_ready(uart_dev)) {
@@ -276,5 +267,5 @@ int main() {
                      PRIORITY, NULL);
   /* enable interrupt to receive sbus data */
   uart_irq_rx_enable(uart_dev);
-  // k_timer_start(&main_timer, K_SECONDS(1), K_MSEC(1));
+  k_timer_start(&stepper_timer, K_MSEC(1), K_MSEC(10));
 }
