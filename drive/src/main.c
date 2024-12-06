@@ -23,7 +23,7 @@
 
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
-
+uint64_t last_time;
 struct k_mutex ch_mutex;
 /* msgq poll event */
 // struct k_poll_event msgq_poll = K_POLL_EVENT_STATIC_INITIALIZER(
@@ -170,26 +170,31 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 
 void arm_work_handler(struct k_work *arm_work_ptr) {
   uint16_t cmd[2] = {channel[4], channel[5]};
+  uint64_t time = k_uptime_get();
+  // printk("%" PRIu64 "\n", time - last_time);
   struct arm_arg *arm_info =
       CONTAINER_OF(arm_work_ptr, struct arm_arg, arm_work_item);
   /* writing to stepper motor */
   for (int i = 0; i < 2; i++) {
-    if (cmd[i] > 1000)
+    if (cmd[i] > 1000) {
+      // printk("%d", arm_info->pos[i]);
       arm_info->pos[i] =
           Stepper_motor_write(&stepper[i], HIGH_PULSE, arm_info->pos[i]);
-    else if (cmd[i] < 800)
+    } else if (cmd[i] < 800)
       arm_info->pos[i] =
           Stepper_motor_write(&stepper[i], LOW_PULSE, arm_info->pos[i]);
     else
       continue;
   }
+  last_time = time;
 }
 
 /* main timer to submit work items */
 void main_timer_handler(struct k_timer *main_timer_ptr) {
-  if (k_mutex_lock(&ch_mutex, K_USEC(10)) == 0) {
-    k_work_submit_to_queue(&work_q, &(arm.arm_work_item));
-    k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
+  if (k_mutex_lock(&ch_mutex, K_USEC(1)) == 0) {
+    arm_work_handler(&arm.arm_work_item);
+    // k_work_submit_to_queue(&work_q, &(arm.arm_work_item));
+    // k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
   }
   k_mutex_unlock(&ch_mutex);
 }
@@ -276,5 +281,5 @@ int main() {
                      PRIORITY, NULL);
   /* enable interrupt to receive sbus data */
   uart_irq_rx_enable(uart_dev);
-  k_timer_start(&main_timer, K_SECONDS(1), K_MSEC(50));
+  k_timer_start(&main_timer, K_SECONDS(1), K_USEC(30));
 }
