@@ -23,6 +23,8 @@
 
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
+
+struct k_mutex ch_mutex;
 /* msgq poll event */
 // struct k_poll_event msgq_poll = K_POLL_EVENT_STATIC_INITIALIZER(
 //     K_POLL_TYPE_MSGQ_DATA_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &uart_msgq, 0);
@@ -101,15 +103,18 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
   int err;
   k_msgq_get(&uart_msgq, buffer, K_NO_WAIT);
   err = parity_checker(packet[23]);
-  if (err == 1) {
-    printk("error\n");
-    return;
-  } else {
-    parse_buffer(buffer, channel);
-    for (int i = 0; i < 8; i++)
-      printk("%u\t", channel[i]);
-    printk("\n");
+  if (k_mutex_lock(&ch_mutex, K_USEC(10)) == 0) {
+    if (err == 1) {
+      printk("error\n");
+      return;
+    } else {
+      parse_buffer(buffer, channel);
+      for (int i = 0; i < 8; i++)
+        printk("%u\t", channel[i]);
+      printk("\n");
+    }
   }
+  k_mutex_unlock(&ch_mutex);
 }
 
 int velocity_callback(const float *velocity_buffer, int buffer_len,
@@ -182,8 +187,11 @@ void arm_work_handler(struct k_work *arm_work_ptr) {
 
 /* main timer to submit work items */
 void main_timer_handler(struct k_timer *main_timer_ptr) {
-  k_work_submit_to_queue(&work_q, &(arm.arm_work_item));
-  k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
+  if (k_mutex_lock(&ch_mutex, K_USEC(10)) == 0) {
+    k_work_submit_to_queue(&work_q, &(arm.arm_work_item));
+    k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
+  }
+  k_mutex_unlock(&ch_mutex);
 }
 K_TIMER_DEFINE(main_timer, main_timer_handler, NULL);
 
@@ -192,6 +200,8 @@ int main() {
   printk("Tarzan version %s\nFile: %s\n", GIT_BRANCH_NAME, __FILE__);
   /* initializing work queue */
   k_work_queue_init(&work_q);
+  /* initializing mutex for channels */
+  k_mutex_init(&ch_mutex);
   /* initializing work items */
   k_work_init(&sbus_work_item, sbus_work_handler);
   k_work_init(&(drive.drive_work_item), drive_work_handler);
