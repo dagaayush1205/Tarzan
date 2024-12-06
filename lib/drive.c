@@ -48,7 +48,7 @@ uint32_t sbus_pwm_interpolation(uint16_t channel, uint32_t *pwm_range,
     return (pwm_range[0] + pwm_range[2]) / 2;
 
   float dchannel = channel_range[1] - channel_range[0];
-  float dpwm = pwm_range[1] - pwm_range[2];
+  float dpwm = pwm_range[1] - pwm_range[0];
 
   uint32_t pwm_interp =
       pwm_range[0] + (dpwm / dchannel) * (channel - channel_range[0]);
