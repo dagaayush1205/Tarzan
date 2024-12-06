@@ -14,7 +14,7 @@ const struct device *const end = DEVICE_DT_GET(DT_ALIAS(imu_pitch_roll));
 
 float angle_pitch = 0, angle_roll = 0, k = 0.90; // k here is tau
 float gyro_offset[3];
-float angle = 0, k = 0.50;
+float angle = 0;
 float target_angle = -45;
 uint64_t prev_time = 0;
 
@@ -47,6 +47,7 @@ int calibration(const struct device *dev) {
 
   printk("Calibration done\n");
   printk("gyroOffset: %0.4f %0.4f %0.4f\n", gyro_offset[0], gyro_offset[1],
+         gyro_offset[2]);
   k_sleep(K_MSEC(10));
   return 0;
 }
