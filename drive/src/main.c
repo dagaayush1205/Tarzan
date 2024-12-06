@@ -23,7 +23,6 @@
 
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
-int a;
 /* msgq poll event */
 // struct k_poll_event msgq_poll = K_POLL_EVENT_STATIC_INITIALIZER(
 //     K_POLL_TYPE_MSGQ_DATA_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &uart_msgq, 0);
@@ -70,11 +69,11 @@ struct arm_arg {
 uint16_t channel[16] = {0}; // to store sbus channels
 uint8_t packet[25];         // to store sbus packets
 int bytes_read;             // to store number of sbus bytes read
-float linear_velocity_range[] = {-1.5, 1.5};
-float angular_velocity_range[] = {-5.5, 5.5};
-float wheel_velocity_range[] = {-10.0, 10.0};
-uint32_t pwm_range[] = {1120000, 1880000};
-uint16_t channel_range[] = {172, 1811};
+const float linear_velocity_range[] = {-1.5, 1.5};
+const float angular_velocity_range[] = {-5.5, 5.5};
+const float wheel_velocity_range[] = {-10.0, 10.0};
+const uint32_t pwm_range[] = {1120000, 1830000};
+const uint16_t channel_range[] = {172, 1811};
 
 /* interrupt to store sbus data */
 void serial_cb(const struct device *dev, void *user_data) {
@@ -118,7 +117,6 @@ int velocity_callback(const float *velocity_buffer, int buffer_len,
   if (buffer_len < wheels_per_side * 2) {
     return 1;
   }
-
   if (pwm_motor_write(&(motor[0]), velocity_pwm_interpolation(
                                        *(velocity_buffer), wheel_velocity_range,
                                        pwm_range))) {
