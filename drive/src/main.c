@@ -181,8 +181,11 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 
 void arm_work_handler() {
   if (k_mutex_lock(&ch_mutex, K_NO_WAIT) == 0) {
-    arm.cmd[0] = channel[4]; // channel[4];
-    // arm.cmd[1] = channel[5];
+    arm.cmd[0] = channel[9];
+    arm.cmd[1] = channel[4];
+    arm.cmd[2] = channel[5];
+    arm.cmd[3] = channel[7];
+    arm.cmd[4] = channel[8];
     /* writing to stepper motor */
     for (int i = 0; i < 5; i++) {
       if (arm.cmd[0] > 1000) {
