@@ -18,16 +18,10 @@
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
 
-#define STACK_SIZE 4096
-#define PRIORITY 2
+#define STACK_SIZE 4096 // work_q thread stack size
+#define PRIORITY 2      // work_q thread priority
 
-/* defining sbus message queue*/
-K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
-uint64_t last_time;
-struct k_mutex ch_mutex;
-/* msgq poll event */
-// struct k_poll_event msgq_poll = K_POLL_EVENT_STATIC_INITIALIZER(
-//     K_POLL_TYPE_MSGQ_DATA_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &uart_msgq, 0);
+#define STEPPER_TIMER 100 // stepper pulse width in microseconds
 
 /* sbus uart */
 static const struct device *const uart_dev =
@@ -40,16 +34,24 @@ static const struct device *const uart_dev =
 struct pwm_motor motor[10] = {
     DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
 /* DT spec for stepper */
-const struct stepper_motor stepper[3] = {
+const struct stepper_motor stepper[5] = {
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), dir_gpios),
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), step_gpios)},
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), dir_gpios),
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), step_gpios)},
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), dir_gpios),
-     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), step_gpios)}};
+     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), step_gpios)},
+    {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor4), dir_gpios),
+     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor4), step_gpios)},
+    {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), dir_gpios),
+     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), step_gpios)}};
 
+/* defining sbus message queue*/
+K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* workq dedicated thread */
 K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
+/* mutex for sbus channels */
+struct k_mutex ch_mutex;
 /* msgq to store sbus data */
 struct k_work_q work_q;
 /* sbus work item */
@@ -64,8 +66,8 @@ struct drive_arg {
 } drive;
 /* struct for arm variables */
 struct arm_arg {
-  struct k_work arm_work_item; // arm work item
-  int pos[3];
+  uint16_t cmd[5];
+  int pos[5];
 } arm;
 
 uint16_t channel[16] = {0}; // to store sbus channels
@@ -103,18 +105,19 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
   int err;
   k_msgq_get(&uart_msgq, buffer, K_NO_WAIT);
   err = parity_checker(packet[23]);
-  if (k_mutex_lock(&ch_mutex, K_USEC(1)) == 0) {
-    if (err == 1) {
-      printk("error\n");
-      return;
-    } else {
+  if (err == 1) {
+    printk("error\n");
+    return;
+  } else {
+    if (k_mutex_lock(&ch_mutex, K_NO_WAIT) == 0) {
       parse_buffer(buffer, channel);
+      k_mutex_unlock(&ch_mutex);
       for (int i = 0; i < 8; i++)
         printk("%u\t", channel[i]);
       printk("\n");
+      k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
     }
   }
-  k_mutex_unlock(&ch_mutex);
 }
 
 int velocity_callback(const float *velocity_buffer, int buffer_len,
@@ -169,28 +172,24 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 }
 
 void arm_work_handler() {
-  uint16_t cmd[2] = {channel[4], channel[5]};
-  /* writing to stepper motor */
-  for (int i = 0; i < 2; i++) {
-    if (cmd[i] > 1000) {
-      // printk("%d", arm_info->pos[i]);
-      arm.pos[i] = Stepper_motor_write(&stepper[i], HIGH_PULSE, arm.pos[i]);
-    } else if (cmd[i] < 800)
-      arm.pos[i] = Stepper_motor_write(&stepper[i], LOW_PULSE, arm.pos[i]);
-    else
-      continue;
+  if (k_mutex_lock(&ch_mutex, K_NO_WAIT) == 0) {
+    arm.cmd[0] = channel[4];
+    arm.cmd[1] = channel[5];
+    /* writing to stepper motor */
+    for (int i = 0; i < 2; i++) {
+      if (arm.cmd[0] > 1000) {
+        arm.pos[i] = Stepper_motor_write(&stepper[i], HIGH_PULSE, arm.pos[i]);
+      } else if (arm.cmd[0] < 800)
+        arm.pos[i] = Stepper_motor_write(&stepper[i], LOW_PULSE, arm.pos[i]);
+      else
+        continue;
+    }
+    k_mutex_unlock(&ch_mutex);
   }
 }
 
 /* main timer to submit work items */
-void main_timer_handler(struct k_timer *main_timer_ptr) {
-  if (k_mutex_lock(&ch_mutex, K_USEC(1)) == 0) {
-    arm_work_handler();
-    // k_work_submit_to_queue(&work_q, &(arm.arm_work_item));
-    k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
-  }
-  k_mutex_unlock(&ch_mutex);
-}
+void main_timer_handler(struct k_timer *main_timer_ptr) { arm_work_handler(); }
 K_TIMER_DEFINE(main_timer, main_timer_handler, NULL);
 
 int main() {
@@ -203,7 +202,6 @@ int main() {
   /* initializing work items */
   k_work_init(&sbus_work_item, sbus_work_handler);
   k_work_init(&(drive.drive_work_item), drive_work_handler);
-  k_work_init(&(arm.arm_work_item), arm_work_handler);
 
   /* initializing drive configs */
   const struct DiffDriveConfig tmp_drive_config = {
@@ -274,5 +272,5 @@ int main() {
                      PRIORITY, NULL);
   /* enable interrupt to receive sbus data */
   uart_irq_rx_enable(uart_dev);
-  k_timer_start(&main_timer, K_SECONDS(1), K_USEC(20));
+  k_timer_start(&main_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
 }
