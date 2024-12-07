@@ -8,7 +8,6 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
-#include <zephyr/logging/log.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/util.h>
 
@@ -44,7 +43,7 @@ const struct stepper_motor stepper[5] = {
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor4), dir_gpios),
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor4), step_gpios)},
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), dir_gpios),
-     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), step_gpios)}};
+     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), step_gpios)}};
 
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
@@ -173,10 +172,10 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 
 void arm_work_handler() {
   if (k_mutex_lock(&ch_mutex, K_NO_WAIT) == 0) {
-    arm.cmd[0] = channel[4];
-    arm.cmd[1] = channel[5];
+    arm.cmd[0] = channel[4]; // channel[4];
+    // arm.cmd[1] = channel[5];
     /* writing to stepper motor */
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 5; i++) {
       if (arm.cmd[0] > 1000) {
         arm.pos[i] = Stepper_motor_write(&stepper[i], HIGH_PULSE, arm.pos[i]);
       } else if (arm.cmd[0] < 800)
@@ -245,7 +244,7 @@ int main() {
     }
   }
   /* stepper motor ready check */
-  for (size_t i = 0U; i < 3; i++) {
+  for (size_t i = 0U; i < 5; i++) {
     if (!gpio_is_ready_dt(&stepper[i].dir)) {
       printk("Stepper Motor %d: Dir %d is not ready", i, stepper[i].dir.pin);
     }
@@ -254,7 +253,7 @@ int main() {
     }
   }
   /* configure stepper gpio for output */
-  for (size_t i = 0U; i < 3; i++) {
+  for (size_t i = 0U; i < 5; i++) {
     if (gpio_pin_configure_dt(&(stepper[i].dir), GPIO_OUTPUT_INACTIVE)) {
       printk("Error: Stepper motor %d: Dir %d not configured", i,
              stepper[i].dir.pin);
