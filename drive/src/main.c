@@ -22,6 +22,7 @@
 
 #define STEPPER_TIMER 100 // stepper pulse width in microseconds
 
+
 /* sbus uart */
 static const struct device *const uart_dev =
     DEVICE_DT_GET(DT_ALIAS(mother_uart));
@@ -45,6 +46,10 @@ const struct stepper_motor stepper[5] = {
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), dir_gpios),
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), step_gpios)}};
 
+/*DT spec for IMU */
+const struct device *const lower = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
+const struct device *const upper = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
+const struct device *const base = DEVICE_DT_GET(DT_ALIAS(imu_turn_table));
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* workq dedicated thread */
@@ -67,7 +72,11 @@ struct drive_arg {
 struct arm_arg {
   uint16_t cmd[5];
   int pos[5];
+  struct joint baseIMU;
+  struct joint lowerIMU;
+  struct joint upperIMU;
 } arm;
+
 
 uint16_t channel[16] = {0}; // to store sbus channels
 uint8_t packet[25];         // to store sbus packets
@@ -221,6 +230,39 @@ int main() {
   if (!device_is_ready(uart_dev)) {
     printk("UART device not ready");
   }
+/*Devcice checks for imu */
+  if (!device_is_ready(lower)) {
+    printk("Device %s is not ready\n", lower->name);
+    return 0;
+  }
+  printk("ready1\n");
+  if (!device_is_ready(upper)) {
+    printk("Device %s is not ready\n", upper->name);
+    return 0;
+  }
+  printk("Ready2\n");
+  if (!device_is_ready(base)) {
+    printk("Device %s is not ready\n", base->name);
+    return 0;
+  }
+  printk("ready3");
+  printk("Calibrating IMU %s\n", base->name);
+  if (calibration(base,&arm.baseIMU)) {
+    printk("Calibration failed for device %s\n", base->name);
+    return 0;
+  }
+
+  printk("Calibrating IMU %s\n", lower->name);
+  if(calibration(lower, &arm.lowerIMU)) {
+    printk("Calibration failed for device %s\n", lower->name);
+  }
+
+  printk("Calibrating IMU %s\n", upper->name);
+  if(calibration(upper, &arm.upperIMU)){
+    printk("Calibration failed for device %s\n", upper->name);
+  }
+
+
   /* set sbus uart for interrupt */
   int err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
   if (err < 0) {
