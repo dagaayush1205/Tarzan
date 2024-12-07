@@ -1,6 +1,3 @@
-#include "zephyr/kernel/thread_stack.h"
-#include "zephyr/sys/printk.h"
-#include "zephyr/sys/util.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,7 +7,10 @@
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
+#include <zephyr/kernel/thread_stack.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
 
 #include <kyvernitis/lib/kyvernitis.h>
 
