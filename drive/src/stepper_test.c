@@ -19,7 +19,7 @@ static const struct device *const uart_debug =
 const struct device *const base = DEVICE_DT_GET(DT_ALIAS(imu_turn_table));
 # define M_PI  3.14159265358979323846
 
-float accel_offset[3], gyro_offset[3];
+ float accel_offset [3] = {-0.1, 0.04, -0.59}, gyro_offset[3] = {0.016, -0.055, 0.005};
 float angle = 0, k = 0.89; // k here is tau
 float target_angle = -35;
 uint64_t prev_time = 0;
@@ -49,27 +49,26 @@ int calibration(const struct device *dev) {
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
 
-  for (int i = 0; i < 1000; i++) {
-    
-    int rc = sensor_sample_fetch(dev);
-  
-    if (rc == 0)
-      rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
-    
-    if (rc == 0)
-      rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
-    
-    for (int i = 0; i < 3; i++) {
-      accel_offset[i] += (sensor_value_to_double(&accel[i]) - true_acc[i]);
-      gyro_offset[i] += (sensor_value_to_double(&gyro[i]) - true_gyro[i]); 
-    }
-    k_sleep(K_MSEC(1));
-  }
-  for (int i = 0; i < 3; i++) {
-    accel_offset[i] = accel_offset[i] / 1000.0;
-    gyro_offset[i] = gyro_offset[i] / 1000.0;
-  }
-
+  // for (int i = 0; i < 1000; i++) {
+  //
+  //   int rc = sensor_sample_fetch(dev);
+  //
+  //   if (rc == 0)
+  //     rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+  //
+  //   if (rc == 0)
+  //     rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
+  //
+  //   for (int i = 0; i < 3; i++) {
+  //     accel_offset[i] += (sensor_value_to_double(&accel[i]) - true_acc[i]);
+  //     gyro_offset[i] += (sensor_value_to_double(&gyro[i]) - true_gyro[i]); 
+  //   }
+  //   k_sleep(K_MSEC(1));
+  // }
+  // for (int i = 0; i < 3; i++) {
+  //   accel_offset[i] = accel_offset[i] / 1000.0;
+  //   gyro_offset[i] = gyro_offset[i] / 1000.0;
+  // }
   printk("Calibration done\n");
   printk("accel_offset: %0.4f %0.4f %0.4f\n", accel_offset[0], accel_offset[1], accel_offset[2]);
   printk("gyroOffset: %0.4f %0.4f %0.4f\n", gyro_offset[0], gyro_offset[1], gyro_offset[2]);
