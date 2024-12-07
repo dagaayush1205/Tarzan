@@ -56,21 +56,21 @@
 	steppermotors { 
 		compatible = "stepper-motors"; 
 		stepper_motor_1: motor_1 { 
-			label = "First link"; 
+			label = "Turn Table"; 
+			dir-gpios = <&gpioe 13 GPIO_ACTIVE_LOW>; 
+			step-gpios = <&gpiof 11 GPIO_ACTIVE_LOW>;
+		};
+	
+		stepper_motor_2: motor_2 {
+			label = "First Link"; 
 			dir-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>;   
 			step-gpios = <&gpioc 0 GPIO_ACTIVE_LOW>;
 		};
 	
-		stepper_motor_2: motor_2 {
-			label = "Second Link"; 
+		stepper_motor_3: motor_3 { 
+			label = "Second Link";
 			dir-gpios = <&gpiog 14 GPIO_ACTIVE_LOW>; 
 			step-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>; 
-		};
-	
-		stepper_motor_3: motor_3 { 
-			label = "Turn Table";
-			dir-gpios = <&gpioe 13 GPIO_ACTIVE_LOW>; 
-			step-gpios = <&gpiof 11 GPIO_ACTIVE_LOW>;
 		};
 		stepper_motor_4: motor_4 { 
 			label = "Pitch";
@@ -103,6 +103,7 @@
 			imu-turn-table = &tt_imu; 
 			imu-pitch-roll = &pr_imu;
 			limit-switch = &switch1;
+			arduino = &i2c4; 
 	};
 	chosen {
 		zephyr,console = &usart2;
