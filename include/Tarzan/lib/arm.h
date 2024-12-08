@@ -15,6 +15,6 @@ struct joint {
 };
 int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos);
 
-static int process_mpu6050(const struct device *dev, struct joint *IMU, int n);
+int process_mpu6050(const struct device *dev, struct joint *IMU, int n);
 
 int calibration(const struct device *dev, struct joint *IMU);

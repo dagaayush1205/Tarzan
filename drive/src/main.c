@@ -70,6 +70,7 @@ struct drive_arg {
 } drive;
 /* struct for arm variables */
 struct arm_arg {
+  struct k_work IMU_work_item;
   uint16_t cmd[5];
   int pos[5];
   struct joint baseIMU;
@@ -113,17 +114,17 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
   int err;
   k_msgq_get(&uart_msgq, buffer, K_NO_WAIT);
   err = parity_checker(packet[23]);
-  if (err == 1) {
+  if (err == 1) { 
     printk("error\n");
-    return;
   } else {
     if (k_mutex_lock(&ch_mutex, K_NO_WAIT) == 0) {
       parse_buffer(buffer, channel);
       k_mutex_unlock(&ch_mutex);
-      for (int i = 0; i < 8; i++)
-        printk("%u\t", channel[i]);
-      printk("\n");
+      // for (int i = 0; i < 8; i++)
+      //   printk("%u\t", channel[i]);
+      // printk("\n");
       k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
+      k_work_submit_to_queue(&work_q, &(arm.IMU_work_item));
     }
   }
 }
@@ -134,7 +135,7 @@ int velocity_callback(const float *velocity_buffer, int buffer_len,
     return 1;
   }
   if (pwm_motor_write(&(motor[0]), velocity_pwm_interpolation(
-                                       *(velocity_buffer), wheel_velocity_range,
+ *(velocity_buffer), wheel_velocity_range,
                                        pwm_range))) {
     printk("Drive: Unable to write pwm pulse to Left");
     return 1;
@@ -174,11 +175,18 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
                                                           channel_range)))
     printk("Linear Actuator: Unable to write at linear actuator");
   // gripper motor write
-  if (pwm_motor_write(&(motor[4]), sbus_pwm_interpolation(channel[6], pwm_range,
+  if (pwm_motor_write(&(motor[8]), sbus_pwm_interpolation(channel[6], pwm_range,
                                                           channel_range)))
     printk("Gripper: Unable to write at gripper");
 }
 
+void arm_imu_handler(struct k_work *IMU_work_ptr){
+  struct arm_arg *arm_info = CONTAINER_OF(IMU_work_ptr, struct arm_arg, IMU_work_item);
+  process_mpu6050(lower, &arm_info->lowerIMU, 1);
+  process_mpu6050(upper, &arm_info->upperIMU, 2);
+  process_mpu6050(base, &arm_info->baseIMU, 3);
+  printk("% .0f\t% .0f\t% .0f\t% .0f\t% .0f\t% .0f\n",arm.lowerIMU.pitch, arm.lowerIMU.roll, arm.upperIMU.pitch, arm.upperIMU.roll, arm.baseIMU.pitch, arm.baseIMU.roll);
+}
 void arm_work_handler() {
   if (k_mutex_lock(&ch_mutex, K_NO_WAIT) == 0) {
     arm.cmd[0] = channel[9];
@@ -201,6 +209,7 @@ void arm_work_handler() {
 
 /* main timer to submit work items */
 void main_timer_handler(struct k_timer *main_timer_ptr) { arm_work_handler(); }
+
 K_TIMER_DEFINE(main_timer, main_timer_handler, NULL);
 
 int main() {
@@ -213,7 +222,7 @@ int main() {
   /* initializing work items */
   k_work_init(&sbus_work_item, sbus_work_handler);
   k_work_init(&(drive.drive_work_item), drive_work_handler);
-
+  k_work_init(&(arm.IMU_work_item),arm_imu_handler);
   /* initializing drive configs */
   const struct DiffDriveConfig tmp_drive_config = {
       .wheel_separation = 0.77f,
@@ -236,23 +245,16 @@ int main() {
 /*Devcice checks for imu */
   if (!device_is_ready(lower)) {
     printk("Device %s is not ready\n", lower->name);
-    return 0;
   }
-  printk("ready1\n");
   if (!device_is_ready(upper)) {
     printk("Device %s is not ready\n", upper->name);
-    return 0;
   }
-  printk("Ready2\n");
   if (!device_is_ready(base)) {
     printk("Device %s is not ready\n", base->name);
-    return 0;
   }
-  printk("ready3");
   printk("Calibrating IMU %s\n", base->name);
   if (calibration(base,&arm.baseIMU)) {
     printk("Calibration failed for device %s\n", base->name);
-    return 0;
   }
 
   printk("Calibrating IMU %s\n", lower->name);
@@ -309,7 +311,7 @@ int main() {
     }
   }
 
-  printk("Initialization completed successfully!\n");
+  printk("\nInitialization completed successfully!\n");
 
   /* start running work queue */
   k_work_queue_start(&work_q, stack_area, K_THREAD_STACK_SIZEOF(stack_area),

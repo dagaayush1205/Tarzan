@@ -63,7 +63,7 @@ int calibration(const struct device *dev, struct joint *IMU) {
 }
 
 /*function to read the value from imu */
-static int process_mpu6050(const struct device *dev, struct joint *IMU, int n) {
+int process_mpu6050(const struct device *dev, struct joint *IMU, int n) {
 
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
@@ -97,7 +97,7 @@ static int process_mpu6050(const struct device *dev, struct joint *IMU, int n) {
         (180 * atan2(-1 * IMU->accel[1], sqrt(pow(IMU->accel[2], 2) + pow(IMU->accel[0], 2))) / M_PI);
     IMU->pitch = k * (IMU->pitch + (IMU->gyro[1]) * (dt)) + (1 - k) * pitch_acc;
     IMU->roll = k * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - k) * roll_acc;
-    printk("pitch: % .0f\t roll: % .0f, %d\t", IMU->pitch, IMU->roll, n);
+    //printk("pitch: % .0f\t roll: % .0f, %d\n", IMU->pitch, IMU->roll, n);
   } else
     printk("sample fetch/get failed: %d\n", rc);
   return rc;
