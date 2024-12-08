@@ -67,7 +67,7 @@ int calibration(const struct device *dev, struct joint *IMU) {
  * dev: imu device
  * IMU: struct joint
  * returns: 0 if succesfull*/
-int process_mpu6050(const struct device *dev, struct joint *IMU) {
+void process_mpu6050(const struct device *dev, struct joint *IMU) {
 
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
@@ -106,5 +106,4 @@ int process_mpu6050(const struct device *dev, struct joint *IMU) {
     IMU->roll = k * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - k) * roll_acc;
   } else
     printk("sample fetch/get failed: %d\n", rc);
-  return rc;
 }
