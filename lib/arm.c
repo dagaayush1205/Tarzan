@@ -32,7 +32,11 @@ int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos) {
   return pos;
 }
 
-/*calibration function fro imu */
+/*Calibration for imu
+ * param:
+ * dev: imu device
+ * IMU: struct joint
+ * returns: 0 if calibration succesfull*/
 
 int calibration(const struct device *dev, struct joint *IMU) {
   struct sensor_value accel[3];
@@ -55,15 +59,15 @@ int calibration(const struct device *dev, struct joint *IMU) {
   for (int i = 0; i < 3; i++)
     IMU->gyro_offset[i] = IMU->gyro_offset[i] / 1000.0;
 
-  printk("Calibration done\n");
-  printk("gyroOffset: %0.4f %0.4f %0.4f\t", IMU->gyro_offset[0], IMU->gyro_offset[1],
-         IMU->gyro_offset[2]);
-  k_sleep(K_MSEC(10));
   return 0;
 }
 
-/*function to read the value from imu */
-int process_mpu6050(const struct device *dev, struct joint *IMU, int n) {
+/* process imu data and compute roll and pitch angle
+ * param:
+ * dev: imu device
+ * IMU: struct joint
+ * returns: 0 if succesfull*/
+int process_mpu6050(const struct device *dev, struct joint *IMU) {
 
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
@@ -73,7 +77,6 @@ int process_mpu6050(const struct device *dev, struct joint *IMU, int n) {
   float dt = (current_time - IMU->prev_time) / 1000.0;
 
   IMU->prev_time = current_time;
-
 
   int rc = sensor_sample_fetch(dev);
 
@@ -91,13 +94,16 @@ int process_mpu6050(const struct device *dev, struct joint *IMU, int n) {
 
   if (rc == 0) {
 
-    float pitch_acc =
-        (180 * atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) + pow(IMU->accel[2], 2))) / M_PI);
-    float roll_acc =
-        (180 * atan2(-1 * IMU->accel[1], sqrt(pow(IMU->accel[2], 2) + pow(IMU->accel[0], 2))) / M_PI);
+    float pitch_acc = (180 *
+                       atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) +
+                                                      pow(IMU->accel[2], 2))) /
+                       M_PI);
+    float roll_acc = (180 *
+                      atan2(-1 * IMU->accel[1], sqrt(pow(IMU->accel[2], 2) +
+                                                     pow(IMU->accel[0], 2))) /
+                      M_PI);
     IMU->pitch = k * (IMU->pitch + (IMU->gyro[1]) * (dt)) + (1 - k) * pitch_acc;
     IMU->roll = k * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - k) * roll_acc;
-    //printk("pitch: % .0f\t roll: % .0f, %d\n", IMU->pitch, IMU->roll, n);
   } else
     printk("sample fetch/get failed: %d\n", rc);
   return rc;

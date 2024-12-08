@@ -17,11 +17,9 @@
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
 
-#define STACK_SIZE 4096 // work_q thread stack size
-#define PRIORITY 2      // work_q thread priority
-
+#define STACK_SIZE 4096   // work_q thread stack size
+#define PRIORITY 2        // work_q thread priority
 #define STEPPER_TIMER 100 // stepper pulse width in microseconds
-
 
 /* sbus uart */
 static const struct device *const uart_dev =
@@ -45,11 +43,13 @@ const struct stepper_motor stepper[5] = {
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor4), step_gpios)},
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), dir_gpios),
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), step_gpios)}};
-
 /*DT spec for IMU */
-const struct device *const lower = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
-const struct device *const upper = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
-const struct device *const base = DEVICE_DT_GET(DT_ALIAS(imu_turn_table));
+const struct device *const imu[3] = {
+    DEVICE_DT_GET(DT_ALIAS(imu_turn_table)),
+    DEVICE_DT_GET(DT_ALIAS(imu_lower_joint)),
+    DEVICE_DT_GET(DT_ALIAS(imu_upper_joint)),
+};
+
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* workq dedicated thread */
@@ -70,14 +70,13 @@ struct drive_arg {
 } drive;
 /* struct for arm variables */
 struct arm_arg {
-  struct k_work IMU_work_item;
   uint16_t cmd[5];
   int pos[5];
+  struct k_work imu_work_item;
   struct joint baseIMU;
   struct joint lowerIMU;
   struct joint upperIMU;
 } arm;
-
 
 uint16_t channel[16] = {0}; // to store sbus channels
 uint8_t packet[25];         // to store sbus packets
@@ -86,6 +85,7 @@ float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[] = {-5.5, 5.5};
 float wheel_velocity_range[] = {-10.0, 10.0};
 uint32_t pwm_range[] = {1120000, 1830000};
+uint32_t servo_pwm_range[] = {500000, 2500000};
 uint16_t channel_range[] = {172, 1811};
 
 /* interrupt to store sbus data */
@@ -114,28 +114,29 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
   int err;
   k_msgq_get(&uart_msgq, buffer, K_NO_WAIT);
   err = parity_checker(packet[23]);
-  if (err == 1) { 
-    printk("error\n");
+  if (err == 1) {
+    printk("Corrupt SBus Packet\n");
   } else {
     if (k_mutex_lock(&ch_mutex, K_NO_WAIT) == 0) {
       parse_buffer(buffer, channel);
       k_mutex_unlock(&ch_mutex);
-      // for (int i = 0; i < 8; i++)
-      //   printk("%u\t", channel[i]);
-      // printk("\n");
+      for (int i = 0; i < 12; i++)
+        printk("%u\t", channel[i]);
+      printk("\n");
       k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
-      k_work_submit_to_queue(&work_q, &(arm.IMU_work_item));
+      k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
     }
   }
 }
 
+/* callback for diffdrive */
 int velocity_callback(const float *velocity_buffer, int buffer_len,
                       int wheels_per_side) {
   if (buffer_len < wheels_per_side * 2) {
     return 1;
   }
   if (pwm_motor_write(&(motor[0]), velocity_pwm_interpolation(
- *(velocity_buffer), wheel_velocity_range,
+                                       *(velocity_buffer), wheel_velocity_range,
                                        pwm_range))) {
     printk("Drive: Unable to write pwm pulse to Left");
     return 1;
@@ -174,26 +175,35 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   if (pwm_motor_write(&(motor[3]), sbus_pwm_interpolation(channel[3], pwm_range,
                                                           channel_range)))
     printk("Linear Actuator: Unable to write at linear actuator");
-  // gripper motor write
-  if (pwm_motor_write(&(motor[8]), sbus_pwm_interpolation(channel[6], pwm_range,
-                                                          channel_range)))
-    printk("Gripper: Unable to write at gripper");
+  // pan servo write
+  if (pwm_motor_write(
+          &(motor[6]),
+          sbus_pwm_interpolation(channel[9], servo_pwm_range, channel_range)))
+    printk("Pan Servo: Unable to write at gripper");
+  // tilt servo write
+  if (pwm_motor_write(
+          &(motor[7]),
+          sbus_pwm_interpolation(channel[10], servo_pwm_range, channel_range)))
+    printk("Tilt Sevo: Unable to write at gripper");
 }
 
-void arm_imu_handler(struct k_work *IMU_work_ptr){
-  struct arm_arg *arm_info = CONTAINER_OF(IMU_work_ptr, struct arm_arg, IMU_work_item);
-  process_mpu6050(lower, &arm_info->lowerIMU, 1);
-  process_mpu6050(upper, &arm_info->upperIMU, 2);
-  process_mpu6050(base, &arm_info->baseIMU, 3);
-  printk("% .0f\t% .0f\t% .0f\t% .0f\t% .0f\t% .0f\n",arm.lowerIMU.pitch, arm.lowerIMU.roll, arm.upperIMU.pitch, arm.upperIMU.roll, arm.baseIMU.pitch, arm.baseIMU.roll);
+/* work handler for processing imu */
+void arm_imu_work_handler(struct k_work *imu_work_ptr) {
+  struct arm_arg *arm_info =
+      CONTAINER_OF(imu_work_ptr, struct arm_arg, imu_work_item);
+  process_mpu6050(imu[0], &arm_info->baseIMU);
+  process_mpu6050(imu[1], &arm_info->lowerIMU);
+  process_mpu6050(imu[2], &arm_info->upperIMU);
 }
-void arm_work_handler() {
+
+/* work handler for stepper motor write*/
+void arm_stepper_work_handler() {
   if (k_mutex_lock(&ch_mutex, K_NO_WAIT) == 0) {
-    arm.cmd[0] = channel[9];
-    arm.cmd[1] = channel[4];
-    arm.cmd[2] = channel[5];
-    arm.cmd[3] = channel[7];
-    arm.cmd[4] = channel[8];
+    arm.cmd[0] = channel[4];
+    arm.cmd[1] = channel[5];
+    arm.cmd[2] = channel[4];
+    arm.cmd[3] = channel[5];
+    arm.cmd[4] = channel[4];
     /* writing to stepper motor */
     for (int i = 0; i < 5; i++) {
       if (arm.cmd[0] > 1000) {
@@ -207,14 +217,16 @@ void arm_work_handler() {
   }
 }
 
-/* main timer to submit work items */
-void main_timer_handler(struct k_timer *main_timer_ptr) { arm_work_handler(); }
-
-K_TIMER_DEFINE(main_timer, main_timer_handler, NULL);
+/* timer to write to stepper motors*/
+void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
+  arm_stepper_work_handler();
+}
+K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
 
 int main() {
 
   printk("Tarzan version %s\nFile: %s\n", GIT_BRANCH_NAME, __FILE__);
+
   /* initializing work queue */
   k_work_queue_init(&work_q);
   /* initializing mutex for channels */
@@ -222,7 +234,7 @@ int main() {
   /* initializing work items */
   k_work_init(&sbus_work_item, sbus_work_handler);
   k_work_init(&(drive.drive_work_item), drive_work_handler);
-  k_work_init(&(arm.IMU_work_item),arm_imu_handler);
+  k_work_init(&(arm.imu_work_item), arm_imu_work_handler);
   /* initializing drive configs */
   const struct DiffDriveConfig tmp_drive_config = {
       .wheel_separation = 0.77f,
@@ -242,37 +254,11 @@ int main() {
   if (!device_is_ready(uart_dev)) {
     printk("UART device not ready");
   }
-/*Devcice checks for imu */
-  if (!device_is_ready(lower)) {
-    printk("Device %s is not ready\n", lower->name);
-  }
-  if (!device_is_ready(upper)) {
-    printk("Device %s is not ready\n", upper->name);
-  }
-  if (!device_is_ready(base)) {
-    printk("Device %s is not ready\n", base->name);
-  }
-  printk("Calibrating IMU %s\n", base->name);
-  if (calibration(base,&arm.baseIMU)) {
-    printk("Calibration failed for device %s\n", base->name);
-  }
-
-  printk("Calibrating IMU %s\n", lower->name);
-  if(calibration(lower, &arm.lowerIMU)) {
-    printk("Calibration failed for device %s\n", lower->name);
-  }
-
-  printk("Calibrating IMU %s\n", upper->name);
-  if(calibration(upper, &arm.upperIMU)){
-    printk("Calibration failed for device %s\n", upper->name);
-  }
-
-
   /* set sbus uart for interrupt */
   int err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
   if (err < 0) {
     if (err == -ENOTSUP) {
-      printk("Interrupt-driven UART API support not enabled");
+      printk("Interrupt-driven UART API support 1005not enabled");
     } else if (err == -ENOSYS) {
       printk("UART device does not support interrupt-driven API");
     } else {
@@ -310,7 +296,29 @@ int main() {
              stepper[i].step.pin);
     }
   }
-
+  /* IMU ready checks */
+  if (!device_is_ready(imu[0])) {
+    printk("Device %s is not ready\n", imu[0]->name);
+  }
+  if (!device_is_ready(imu[1])) {
+    printk("Device %s is not ready\n", imu[1]->name);
+  }
+  if (!device_is_ready(imu[2])) {
+    printk("Device %s is not ready\n", imu[2]->name);
+  }
+  /* Calibrating IMUs */
+  printk("Calibrating IMU %s\n", imu[0]->name);
+  if (calibration(imu[0], &arm.baseIMU)) {
+    printk("Calibration failed for device %s\n", imu[0]->name);
+  }
+  printk("Calibrating IMU %s\n", imu[1]->name);
+  if (calibration(imu[1], &arm.lowerIMU)) {
+    printk("Calibration failed for device %s\n", imu[1]->name);
+  }
+  printk("Calibrating IMU %s\n", imu[2]->name);
+  if (calibration(imu[2], &arm.upperIMU)) {
+    printk("Calibration failed for device %s\n", imu[2]->name);
+  }
   printk("\nInitialization completed successfully!\n");
 
   /* start running work queue */
@@ -318,5 +326,6 @@ int main() {
                      PRIORITY, NULL);
   /* enable interrupt to receive sbus data */
   uart_irq_rx_enable(uart_dev);
-  k_timer_start(&main_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
+  /* enabling stepper timer */
+  k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
 }
