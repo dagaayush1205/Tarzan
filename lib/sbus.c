@@ -32,13 +32,13 @@ void parse_buffer(uint8_t buff[25], uint16_t channel[16]) {
  * parity_byte: checking sbus parity
  * returns 0 if packet is correct*/
 int parity_checker(int parity_byte) {
-  uint8_t bit0, bit1;
+  uint8_t frame_lost, fail_safe;
 
   // extracting first two bit of parity byte
-  bit0 = parity_byte >> 7;
-  bit1 = (parity_byte >> 6) << 1;
+  frame_lost = parity_byte >> 7;
+  fail_safe = (parity_byte >> 6) << 1;
 
-  if (bit0 == 0 && bit1 == 0)
+  if (frame_lost == 0 && fail_safe == 0)
     return 0;
 
   else
