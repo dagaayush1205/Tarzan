@@ -1,5 +1,4 @@
 #include <stdint.h>
-
 /* parsing sbus packet to 11bit channels
  * param:
  * buff: 25 bytes message from sbus
@@ -31,7 +30,7 @@ void parse_buffer(uint8_t buff[25], uint16_t channel[16]) {
  * param:
  * parity_byte: checking sbus parity
  * returns 0 if packet is correct*/
-int parity_checker(int parity_byte) {
+int parity_checker(uint8_t parity_byte) {
   uint8_t frame_lost, fail_safe;
 
   // extracting first two bit of parity byte
