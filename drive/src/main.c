@@ -54,8 +54,12 @@ const struct device *const imu[3] = {
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* workq dedicated thread */
 K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
-/* mutex for sbus channels */
-struct k_mutex ch_mutex;
+/* semaphore for channels */
+struct k_sem ch_sem;
+/* mutex for channel reader count */
+struct k_mutex ch_reader_cnt_mutex;
+/* mutex for channel readers to wait for writer */
+struct k_mutex ch_writer_mutex;
 /* msgq to store sbus data */
 struct k_work_q work_q;
 /* sbus work item */
@@ -78,9 +82,11 @@ struct arm_arg {
   struct joint upperIMU;
 } arm;
 
+int ch_reader_cnt;          // no. of readers accessing channels
 uint16_t channel[16] = {0}; // to store sbus channels
 uint8_t packet[25];         // to store sbus packets
 int bytes_read;             // to store number of sbus bytes read
+/* range variables */
 float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[] = {-5.5, 5.5};
 float wheel_velocity_range[] = {-10.0, 10.0};
@@ -117,14 +123,18 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
   if (err == 1) {
     printk("Corrupt SBus Packet\n");
   } else {
-    if (k_mutex_lock(&ch_mutex, K_NO_WAIT) == 0) {
-      parse_buffer(buffer, channel);
-      k_mutex_unlock(&ch_mutex);
-      for (int i = 0; i < 12; i++)
-        printk("%u\t", channel[i]);
-      printk("\n");
-      k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
-      k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
+    if (k_mutex_lock(&ch_writer_mutex, K_FOREVER) == 0) {
+      if (k_sem_take(&ch_sem, K_NO_WAIT) == 0) {
+        parse_buffer(buffer, channel);
+        k_sem_give(&ch_sem);
+        k_mutex_unlock(&ch_writer_mutex);
+        for (int i = 0; i < 8; i++)
+          printk("%u\t", channel[i]);
+        printk("\n");
+        k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
+        k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
+      }
+      k_mutex_unlock(&ch_writer_mutex);
     }
   }
 }
@@ -159,6 +169,17 @@ int feedback_callback(float *feedback_buffer, int buffer_len,
 void drive_work_handler(struct k_work *drive_work_ptr) {
   struct drive_arg *drive_info =
       CONTAINER_OF(drive_work_ptr, struct drive_arg, drive_work_item);
+  if (k_mutex_lock(&ch_writer_mutex, K_NO_WAIT) != 0) {
+    return;
+  }
+  k_mutex_unlock(&ch_writer_mutex);
+  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
+  if (ch_reader_cnt == 0) {
+    k_sem_take(&ch_sem, K_FOREVER);
+  }
+  ch_reader_cnt++;
+  k_mutex_unlock(&ch_reader_cnt_mutex);
+
   // drive motor write
   uint64_t drive_timestamp = k_uptime_get();
   drive_info->cmd.angular_z = sbus_velocity_interpolation(
@@ -184,7 +205,13 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   if (pwm_motor_write(
           &(motor[7]),
           sbus_pwm_interpolation(channel[10], servo_pwm_range, channel_range)))
-    printk("Tilt Sevo: Unable to write at gripper");
+    printk("Tilt Servo: Unable to write at gripper");
+  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
+  ch_reader_cnt--;
+  if (ch_reader_cnt == 0) {
+    k_sem_give(&ch_sem);
+  }
+  k_mutex_unlock(&ch_reader_cnt_mutex);
 }
 
 /* work handler for processing imu */
@@ -198,23 +225,34 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
 
 /* work handler for stepper motor write*/
 void arm_stepper_work_handler() {
-  if (k_mutex_lock(&ch_mutex, K_NO_WAIT) == 0) {
-    arm.cmd[0] = channel[4];
-    arm.cmd[1] = channel[5];
-    arm.cmd[2] = channel[4];
-    arm.cmd[3] = channel[5];
-    arm.cmd[4] = channel[4];
-    /* writing to stepper motor */
-    for (int i = 0; i < 5; i++) {
-      if (arm.cmd[0] > 1000) {
-        arm.pos[i] = Stepper_motor_write(&stepper[i], HIGH_PULSE, arm.pos[i]);
-      } else if (arm.cmd[0] < 800)
-        arm.pos[i] = Stepper_motor_write(&stepper[i], LOW_PULSE, arm.pos[i]);
-      else
-        continue;
-    }
-    k_mutex_unlock(&ch_mutex);
+  if (k_mutex_lock(&ch_writer_mutex, K_NO_WAIT) != 0) {
+    return;
   }
+  k_mutex_unlock(&ch_writer_mutex);
+  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
+  if (ch_reader_cnt == 0) {
+    k_sem_take(&ch_sem, K_FOREVER);
+  }
+  ch_reader_cnt++;
+  k_mutex_unlock(&ch_reader_cnt_mutex);
+  arm.cmd[0] = channel[4];
+  arm.cmd[1] = channel[5];
+  arm.cmd[2] = channel[6];
+  /* writing to stepper motor */
+  for (int i = 0; i < 3; i++) {
+    if (arm.cmd[i] > 1000) {
+      arm.pos[i] = Stepper_motor_write(&stepper[i], HIGH_PULSE, arm.pos[i]);
+    } else if (arm.cmd[i] < 800)
+      arm.pos[i] = Stepper_motor_write(&stepper[i], LOW_PULSE, arm.pos[i]);
+    else
+      continue;
+  }
+  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
+  ch_reader_cnt--;
+  if (ch_reader_cnt == 0) {
+    k_sem_give(&ch_sem);
+  }
+  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
 }
 
 /* timer to write to stepper motors*/
@@ -229,8 +267,12 @@ int main() {
 
   /* initializing work queue */
   k_work_queue_init(&work_q);
-  /* initializing mutex for channels */
-  k_mutex_init(&ch_mutex);
+  /* initializing channel semaphore */
+  k_sem_init(&ch_sem, 1, 1);
+  /* initializing mutex for readers to wait */
+  k_mutex_init(&ch_writer_mutex);
+  /* inittializing mutex for reader count */
+  k_mutex_init(&ch_reader_cnt_mutex);
   /* initializing work items */
   k_work_init(&sbus_work_item, sbus_work_handler);
   k_work_init(&(drive.drive_work_item), drive_work_handler);
@@ -306,7 +348,7 @@ int main() {
   if (!device_is_ready(imu[2])) {
     printk("Device %s is not ready\n", imu[2]->name);
   }
-  /* Calibrating IMUs */
+  // /* Calibrating IMUs */
   printk("Calibrating IMU %s\n", imu[0]->name);
   if (calibration(imu[0], &arm.baseIMU)) {
     printk("Calibration failed for device %s\n", imu[0]->name);
