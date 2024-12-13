@@ -90,6 +90,7 @@
 	 	};
   	};
 	aliases {
+			latte-panda = &cdc_acm_uart0; 
 			debug-uart = &usart2;
 			mother-uart = &usart6;
      			gps-uart = &usart3;
@@ -104,7 +105,6 @@
 			mm-turn-table = &tt_mm; 
 			mm-rover = &rover_mm; 
 			limit-switch = &switch1;
-			latte-panda = &cdc_acm_uart0; 
 	};
 	chosen {
 		zephyr,console = &usart2;

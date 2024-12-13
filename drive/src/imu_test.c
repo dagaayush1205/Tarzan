@@ -7,8 +7,8 @@
 
 const struct device *const lower = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
 const struct device *const upper = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
-const struct device *const base = DEVICE_DT_GET(DT_ALIAS(imu_turn_table));
-//const struct device *const end = DEVICE_DT_GET(DT_ALIAS(imu_pitch_roll));
+const struct device *const base = DEVICE_DT_GET(DT_ALIAS(mm_turn_table));
+const struct device *const end = DEVICE_DT_GET(DT_ALIAS(imu_pitch_roll));
 
 #define M_PI 3.14159265358979323846
 
@@ -22,6 +22,7 @@ struct joint {
   uint64_t prev_time;
   float gyro_offset[3];
 };
+
 int calibration(const struct device *dev, struct joint *IMU) {
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
@@ -44,12 +45,11 @@ int calibration(const struct device *dev, struct joint *IMU) {
     IMU->gyro_offset[i] = IMU->gyro_offset[i] / 1000.0;
 
   printk("Calibration done\n");
-  printk("gyroOffset: %0.4f %0.4f %0.4f\t", IMU->gyro_offset[0], IMU->gyro_offset[1],
-         IMU->gyro_offset[2]);
+  printk("gyroOffset: %0.4f %0.4f %0.4f\t", IMU->gyro_offset[0],
+         IMU->gyro_offset[1], IMU->gyro_offset[2]);
   k_sleep(K_MSEC(10));
   return 0;
 }
-
 
 static int process_mpu6050(const struct device *dev, struct joint *IMU, int n) {
 
@@ -61,7 +61,6 @@ static int process_mpu6050(const struct device *dev, struct joint *IMU, int n) {
   float dt = (current_time - IMU->prev_time) / 1000.0;
 
   IMU->prev_time = current_time;
-
 
   int rc = sensor_sample_fetch(dev);
 
@@ -79,10 +78,14 @@ static int process_mpu6050(const struct device *dev, struct joint *IMU, int n) {
 
   if (rc == 0) {
 
-    float pitch_acc =
-        (180 * atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) + pow(IMU->accel[2], 2))) / M_PI);
-    float roll_acc =
-        (180 * atan2(-1 * IMU->accel[1], sqrt(pow(IMU->accel[2], 2) + pow(IMU->accel[0], 2))) / M_PI);
+    float pitch_acc = (180 *
+                       atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) +
+                                                      pow(IMU->accel[2], 2))) /
+                       M_PI);
+    float roll_acc = (180 *
+                      atan2(-1 * IMU->accel[1], sqrt(pow(IMU->accel[2], 2) +
+                                                     pow(IMU->accel[0], 2))) /
+                      M_PI);
     IMU->pitch = k * (IMU->pitch + (IMU->gyro[1]) * (dt)) + (1 - k) * pitch_acc;
     IMU->roll = k * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - k) * roll_acc;
     printk("pitch: % .0f\t roll: % .0f, %d\t", IMU->pitch, IMU->roll, n);
@@ -90,14 +93,22 @@ static int process_mpu6050(const struct device *dev, struct joint *IMU, int n) {
     printk("sample fetch/get failed: %d\n", rc);
   return rc;
 }
+void process_bmm150(const struct device *dev) {
+  struct sensor_value mag[3];
+  int rc = sensor_sample_fetch(dev);
 
+  if (rc == 0)
+    rc = sensor_channel_get(dev, SENSOR_CHAN_MAGN_XYZ, mag);
+
+  printf("%f %f %f\n", sensor_value_to_double(&mag[0]),
+         sensor_value_to_double(&mag[1]), sensor_value_to_double(&mag[2]));
+}
 int main() {
   printk("This is tarzan version %s\nFile: %s\n", GIT_BRANCH_NAME, __FILE__);
-  struct joint baseIMU;
   struct joint lowerIMU;
   struct joint upperIMU;
-  // struct joint endIMU;
-/*Device checks*/
+  struct joint endIMU;
+  /*Device checks*/
   if (!device_is_ready(lower)) {
     printk("Device %s is not ready\n", lower->name);
     return 0;
@@ -113,43 +124,36 @@ int main() {
     return 0;
   }
   printk("ready3");
-  // if (!device_is_ready(end)) {
-  //   printk("Device %s is not ready\n", upper->name);
-  //   return 0;
-  // }
-
-
-/*Calibration */
-  printk("Calibrating IMU %s\n", base->name);
-  if (calibration(base,&baseIMU)) {
-    printk("Calibration failed for device %s\n", base->name);
+  if (!device_is_ready(end)) {
+    printk("Device %s is not ready\n", upper->name);
     return 0;
   }
 
+  /*Calibration */
+  printk("Calibrating IMU %s\n", base->name);
   printk("Calibrating IMU %s\n", lower->name);
-  if(calibration(lower, &lowerIMU)) {
+  if (calibration(lower, &lowerIMU)) {
     printk("Calibration failed for device %s\n", lower->name);
   }
 
   printk("Calibrating IMU %s\n", upper->name);
-  if(calibration(upper, &upperIMU)){
+  if (calibration(upper, &upperIMU)) {
     printk("Calibration failed for device %s\n", upper->name);
   }
 
-  // printk("Calibrating IMU %s\n", end->name);
-  // if(calibration(end, &endIMU)){
-  //   printk("Calibration failed for device %s\n", end->name);
-  // }
-
+  printk("Calibrating IMU %s\n", end->name);
+  if (calibration(end, &endIMU)) {
+    printk("Calibration failed for device %s\n", end->name);
+  }
 
   printk("Initialization completed successfully!\n");
-  
+
   while (true) {
-    
-    process_mpu6050(lower, &lowerIMU, 1);
-    process_mpu6050(upper, &upperIMU, 2);
+
+    // process_mpu6050(lower, &lowerIMU, 1);
+    // process_mpu6050(upper, &upperIMU, 2);
     // process_mpu6050(end,&endIMU);
-    process_mpu6050(base, &baseIMU, 3);
+    process_bmm150(base);
     k_sleep(K_MSEC(20));
   }
 }
