@@ -41,7 +41,7 @@ int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos) {
 int calibration(const struct device *dev, struct joint *IMU) {
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
-
+  float true_gyro = 0;
   for (int i = 0; i < 1000; i++) {
 
     int rc = sensor_sample_fetch(dev);
@@ -53,7 +53,7 @@ int calibration(const struct device *dev, struct joint *IMU) {
       rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
 
     for (int i = 0; i < 3; i++)
-      IMU->gyro_offset[i] += (sensor_value_to_double(&gyro[i]));
+      IMU->gyro_offset[i] += (sensor_value_to_double(&gyro[i]) - true_gyro);
     k_sleep(K_MSEC(1));
   }
   for (int i = 0; i < 3; i++)
