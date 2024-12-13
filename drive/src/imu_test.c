@@ -30,23 +30,23 @@ int main() {
   /*Device checks*/
   if (!device_is_ready(lower)) {
     printk("Device %s is not ready\n", lower->name);
-    return 0;
+    // return 0;
   }
   printk("ready1\n");
   if (!device_is_ready(upper)) {
     printk("Device %s is not ready\n", upper->name);
-    return 0;
+    // return 0;
   }
-  printk("Ready2\n");
-  if (!device_is_ready(base)) {
-    printk("Device %s is not ready\n", base->name);
-    return 0;
-  }
-  printk("ready3");
-  if (!device_is_ready(end)) {
-    printk("Device %s is not ready\n", upper->name);
-    return 0;
-  }
+  // printk("Ready2\n");
+  // if (!device_is_ready(base)) {
+  //   printk("Device %s is not ready\n", base->name);
+  //   // return 0;
+  // }
+  // printk("ready3");
+  // if (!device_is_ready(end)) {
+  //   printk("Device %s is not ready\n", upper->name);
+  //   // return 0;
+  // }
 
   /*Calibration */
   printk("Calibrating IMU %s\n", base->name);
@@ -60,19 +60,19 @@ int main() {
     printk("Calibration failed for device %s\n", upper->name);
   }
 
-  printk("Calibrating IMU %s\n", end->name);
-  if (calibration(end, &endIMU)) {
-    printk("Calibration failed for device %s\n", end->name);
-  }
-
+  // printk("Calibrating IMU %s\n", end->name);
+  // if (calibration(end, &endIMU)) {
+  //   printk("Calibration failed for device %s\n", end->name);
+  // }
+  //
   printk("Initialization completed successfully!\n");
 
   while (true) {
 
     process_mpu6050(lower, &lowerIMU);
     process_mpu6050(upper, &upperIMU);
-    process_mpu6050(end, &endIMU);
-    process_bmm150(base);
+    // process_mpu6050(end, &endIMU);
+    // process_bmm150(base);
     k_sleep(K_MSEC(20));
   }
 }

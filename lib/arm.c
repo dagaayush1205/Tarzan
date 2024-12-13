@@ -104,6 +104,7 @@ void process_mpu6050(const struct device *dev, struct joint *IMU) {
                       M_PI);
     IMU->pitch = k * (IMU->pitch + (IMU->gyro[1]) * (dt)) + (1 - k) * pitch_acc;
     IMU->roll = k * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - k) * roll_acc;
+    // printk("% .0f\t % .0f\n ", IMU->pitch , IMU->roll);
   } else
     printk("sample fetch/get failed: %d\n", rc);
 }
