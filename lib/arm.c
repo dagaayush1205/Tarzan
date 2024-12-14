@@ -41,7 +41,7 @@ int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos) {
 int calibration(const struct device *dev, struct joint *IMU) {
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
-  float true_gyro = 0;
+  double true_gyro = 0;
   for (int i = 0; i < 1000; i++) {
 
     int rc = sensor_sample_fetch(dev);
@@ -74,7 +74,7 @@ void process_mpu6050(const struct device *dev, struct joint *IMU) {
 
   uint64_t current_time = k_uptime_get();
 
-  float dt = (current_time - IMU->prev_time) / 1000.0;
+  double dt = (current_time - IMU->prev_time) / 1000.0;
 
   IMU->prev_time = current_time;
 
@@ -94,14 +94,14 @@ void process_mpu6050(const struct device *dev, struct joint *IMU) {
 
   if (rc == 0) {
 
-    float pitch_acc = (180 *
-                       atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) +
-                                                      pow(IMU->accel[2], 2))) /
+    double pitch_acc = (180 *
+                        atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) +
+                                                       pow(IMU->accel[2], 2))) /
+                        M_PI);
+    double roll_acc = (180 *
+                       atan2(-1 * IMU->accel[1], sqrt(pow(IMU->accel[2], 2) +
+                                                      pow(IMU->accel[0], 2))) /
                        M_PI);
-    float roll_acc = (180 *
-                      atan2(-1 * IMU->accel[1], sqrt(pow(IMU->accel[2], 2) +
-                                                     pow(IMU->accel[0], 2))) /
-                      M_PI);
     IMU->pitch = k * (IMU->pitch + (IMU->gyro[1]) * (dt)) + (1 - k) * pitch_acc;
     IMU->roll = k * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - k) * roll_acc;
     // printk("% .0f\t % .0f\n ", IMU->pitch , IMU->roll);

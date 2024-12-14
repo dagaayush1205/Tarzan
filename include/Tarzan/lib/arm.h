@@ -6,12 +6,12 @@
 #define k 0.90 // k here is tau
 
 struct joint {
-  float accel[3];
-  float gyro[3];
-  float pitch;
-  float roll;
+  double accel[3];
+  double gyro[3];
+  double pitch;
+  double roll;
   uint64_t prev_time;
-  float gyro_offset[3];
+  double gyro_offset[3];
 };
 int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos);
 
