@@ -102,6 +102,7 @@
 			imu-lower-joint = &lj_imu; 
 			imu-upper-joint = &uj_imu;
 			imu-pitch-roll = &pr_imu;
+			imu-turn-table = &tt_imu; 
 			mm-turn-table = &tt_mm; 
 			mm-rover = &rover_mm; 
 			limit-switch = &switch1;
@@ -210,6 +211,11 @@
 	pinctrl-0 = <&i2c4_scl_pf14 &i2c4_sda_pf15>;
 	pinctrl-names = "default"; 
 	clock-frequency = <I2C_BITRATE_STANDARD>; 
+	tt_imu: mpu6050@68 { 
+		compatible = "invensense,mpu6050";
+		reg = <0x68>;
+		status = "okay"; 
+	};
 	pr_imu: mpu6050@69 { 
 		compatible = "invensense,mpu6050";
 		reg = <0x69>;
