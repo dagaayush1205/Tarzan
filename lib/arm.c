@@ -94,17 +94,12 @@ void process_mpu6050(const struct device *dev, struct joint *IMU) {
 
   if (rc == 0) {
 
-    double pitch_acc = (180 *
-                        atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) +
-                                                       pow(IMU->accel[2], 2))) /
-                        M_PI);
-    double roll_acc = (180 *
-                       atan2(-1 * IMU->accel[1], sqrt(pow(IMU->accel[2], 2) +
-                                                      pow(IMU->accel[0], 2))) /
-                       M_PI);
+    double pitch_acc = (atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) +
+                                                       pow(IMU->accel[2], 2))));
+    double roll_acc = (atan2(-1 * IMU->accel[1], sqrt(pow(IMU->accel[2], 2) +
+                                                      pow(IMU->accel[0], 2))));
     IMU->pitch = k * (IMU->pitch + (IMU->gyro[1]) * (dt)) + (1 - k) * pitch_acc;
     IMU->roll = k * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - k) * roll_acc;
-    // printk("% .0f\t % .0f\n ", IMU->pitch , IMU->roll);
   } else
     printk("sample fetch/get failed: %d\n", rc);
 }
