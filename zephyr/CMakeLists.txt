@@ -6,5 +6,6 @@ if(CONFIG_Tarzan)
         ${Tarzan_DIR}/lib/drive.c
 	${Tarzan_DIR}/lib/sbus.c
 	${Tarzan_DIR}/lib/arm.c
+	${Tarzan_DIR}/lib/cobs.c
         )
 endif()
