@@ -1,9 +1,10 @@
+#pragma once
 #include <stdint.h>
 #include <zephyr/device.h>
 #define HIGH_PULSE 1
 #define LOW_PULSE 0
 #define M_PI 3.14159265358979323846
-#define k 0.90 // k here is tau
+#define TAU 0.90
 
 struct joint {
   double accel[3];
