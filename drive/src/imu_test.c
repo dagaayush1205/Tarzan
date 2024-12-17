@@ -14,16 +14,7 @@ const struct device *const upper = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
 const struct device *const end = DEVICE_DT_GET(DT_ALIAS(imu_pitch_roll));
 const struct device *const dev = DEVICE_DT_GET(DT_ALIAS(latte_panda_uart));
 
-struct inverse_msg {
-  double turn_table;
-  double first_link;
-  double second_link;
-  double pitch;
-  double roll;
-  double x;
-  double y;
-  double z;
-} msg_rx;
+struct inverse_msg msg_rx;
 
 int pos;
 const int MAX_MSG_LEN = sizeof(struct inverse_msg) + 2;
