@@ -495,4 +495,5 @@ int main() {
   uart_irq_rx_enable(latte_panda_uart);
   /* enabling stepper timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
+  k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 }
