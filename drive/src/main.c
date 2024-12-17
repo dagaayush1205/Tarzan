@@ -300,7 +300,8 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
       CONTAINER_OF(imu_work_ptr, struct arm_arg, imu_work_item);
   process_mpu6050(imu[0], &arm_info->endIMU);
   process_mpu6050(imu[1], &arm_info->lowerIMU);
-  process_mpu6050(imu[2], &arm_info->upperIMU);
+  // process_mpu6050(imu[2], &arm_info->upperIMU); 
+  k_work_submit_to_queue(&work_q, &(com.cobs_tx_work_item));
 }
 
 /* work handler for stepper motor write*/
@@ -374,6 +375,7 @@ int main() {
   k_work_init(&(drive.drive_work_item), drive_work_handler);
   k_work_init(&(arm.imu_work_item), arm_imu_work_handler);
   k_work_init(&(com.cobs_rx_work_item), cobs_rx_work_handler);
+  k_work_init(&(com.cobs_tx_work_item), cobs_tx_work_handler);
   /* initializing drive configs */
   const struct DiffDriveConfig tmp_drive_config = {
       .wheel_separation = 0.77f,
