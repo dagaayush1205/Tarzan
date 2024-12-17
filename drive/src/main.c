@@ -10,10 +10,12 @@
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/usb/usb_device.h>
 
 #include <kyvernitis/lib/kyvernitis.h>
 
 #include <Tarzan/lib/arm.h>
+#include <Tarzan/lib/cobs.h>
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
 
@@ -22,8 +24,12 @@
 #define STEPPER_TIMER 100 // stepper pulse width in microseconds
 
 /* sbus uart */
-static const struct device *const uart_dev =
-    DEVICE_DT_GET(DT_ALIAS(mother_uart));
+static const struct device *const sbus_uart =
+    DEVICE_DT_GET(DT_ALIAS(sbus_uart));
+/* latte panda uart */
+static const struct device *const latte_panda_uart =
+    DEVICE_DT_GET(DT_ALIAS(latte_panda_uart));
+
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id)                                            \
   {.dev_spec = PWM_DT_SPEC_GET(pwm_dev_id),                                    \
@@ -45,13 +51,14 @@ const struct stepper_motor stepper[5] = {
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), step_gpios)}};
 /*DT spec for IMU */
 const struct device *const imu[3] = {
-    DEVICE_DT_GET(DT_ALIAS(imu_turn_table)),
     DEVICE_DT_GET(DT_ALIAS(imu_lower_joint)),
     DEVICE_DT_GET(DT_ALIAS(imu_upper_joint)),
+    DEVICE_DT_GET(DT_ALIAS(imu_pitch_roll)),
 };
-
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
+/* defining cobs message queue */
+K_MSGQ_DEFINE(msgq_rx, sizeof(struct inverse_msg) + 2, 50, 1);
 /* workq dedicated thread */
 K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
 /* semaphore for channels */
@@ -74,18 +81,31 @@ struct drive_arg {
 } drive;
 /* struct for arm variables */
 struct arm_arg {
-  uint16_t cmd[5];
+  uint16_t direction[5];
+  int dir[5];
   int pos[5];
   struct k_work imu_work_item;
   struct joint baseIMU;
   struct joint lowerIMU;
   struct joint upperIMU;
+  struct joint endIMU;
 } arm;
+/* struct for communication with latte panda*/
+struct com_arg {
+  struct k_work cobs_rx_work_item;
+  struct k_work cobs_tx_work_item;
+  struct inverse_msg msg_rx;
+  struct inverse_msg msg_tx;
+} com;
 
 int ch_reader_cnt;          // no. of readers accessing channels
 uint16_t channel[16] = {0}; // to store sbus channels
 uint8_t packet[25];         // to store sbus packets
-int bytes_read;             // to store number of sbus bytes read
+int sbus_bytes_read;        // to store number of sbus bytes read
+const int MSG_LEN = sizeof(struct inverse_msg) + 2; // len of cobs mssg
+uint8_t rx_buf[sizeof(struct inverse_msg) + 2] = {0};
+uint8_t tx_buf[sizeof(struct inverse_msg) + 2] = {0};
+int cobs_bytes_read; // to store number of cobs bytes read
 /* range variables */
 float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[] = {-5.5, 5.5};
@@ -95,25 +115,50 @@ uint32_t servo_pwm_range[] = {500000, 2500000};
 uint16_t channel_range[] = {172, 1811};
 
 /* interrupt to store sbus data */
-void serial_cb(const struct device *dev, void *user_data) {
+void sbus_cb(const struct device *dev, void *user_data) {
   ARG_UNUSED(user_data);
   uint8_t c;
-  if (!uart_irq_update(uart_dev))
+  if (!uart_irq_update(sbus_uart))
     return;
-  if (!uart_irq_rx_ready(uart_dev))
+  if (!uart_irq_rx_ready(sbus_uart))
     return;
-  while (bytes_read < 25 && uart_fifo_read(uart_dev, &c, 1)) {
-    if (bytes_read == 0 && c != 0x0f)
+  while (sbus_bytes_read < 25 && uart_fifo_read(sbus_uart, &c, 1)) {
+    if (sbus_bytes_read == 0 && c != 0x0f)
       continue;
-    packet[bytes_read++] = c;
+    packet[sbus_bytes_read++] = c;
   }
-  if (bytes_read == 25) {
+  if (sbus_bytes_read == 25) {
     k_msgq_put(&uart_msgq, &packet, K_NO_WAIT);
     k_work_submit_to_queue(&work_q, &sbus_work_item);
-    bytes_read = 0;
+    sbus_bytes_read = 0;
   }
 }
-
+/* interrupt to store message from latte panda */
+void cobs_cb(const struct device *dev, void *user_data) {
+  ARG_UNUSED(user_data);
+  uint8_t c;
+  if (!uart_irq_update(dev)) {
+    return;
+  }
+  if (!uart_irq_rx_ready(dev)) {
+    return;
+  }
+  while (uart_fifo_read(dev, &c, 1) == 1) {
+    if (c == 0x00 && cobs_bytes_read > 0) {
+      rx_buf[cobs_bytes_read] = 0;
+      if (cobs_bytes_read != (MSG_LEN - 1)) {
+        cobs_bytes_read = 0;
+        continue;
+      }
+      k_msgq_put(&msgq_rx, rx_buf, K_NO_WAIT);
+      k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
+      k_work_submit_to_queue(&work_q, &com.cobs_rx_work_item);
+      cobs_bytes_read = 0;
+    } else if (cobs_bytes_read < sizeof(rx_buf)) {
+      rx_buf[cobs_bytes_read++] = c;
+    }
+  }
+}
 /* work handler to form sbus packet and return sbus channels */
 void sbus_work_handler(struct k_work *sbus_work_ptr) {
   uint8_t buffer[25] = {0};
@@ -132,14 +177,50 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
           printk("%u\t", channel[i]);
         printk("\n");
         k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
-        k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
       }
       k_mutex_unlock(&ch_writer_mutex);
     }
   }
 }
+/* cobs message work handler */
+void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
+  uint8_t buf[MSG_LEN];
+  struct com_arg *com_info =
+      CONTAINER_OF(cobs_rx_work_ptr, struct com_arg, cobs_rx_work_item);
+  k_msgq_get(&msgq_rx, buf, K_MSEC(4));
+  cobs_decode_result result = cobs_decode(
+      (void *)&(com_info->msg_rx), sizeof(com_info->msg_rx), buf, MSG_LEN - 1);
+  if (result.status != COBS_DECODE_OK) {
+    printk("Error: COBS Decode Failed %d\n", result.status);
+    return;
+  }
+}
+void cobs_tx_work_handler(struct k_work *cobs_tx_work_ptr) {
+  struct com_arg *com_info =
+      CONTAINER_OF(cobs_tx_work_ptr, struct com_arg, cobs_tx_work_item);
+  k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 
-/* callback for diffdrive */
+  com_info->msg_tx.turn_table = 0;
+  com_info->msg_tx.first_link = 0;
+  com_info->msg_tx.second_link = 0;
+  com_info->msg_tx.pitch = 0;
+  com_info->msg_tx.roll = 0;
+  com_info->msg_tx.x = 0;
+  com_info->msg_tx.y = 0;
+  com_info->msg_tx.z = 0;
+
+  cobs_encode_result result = cobs_encode(
+      tx_buf, MSG_LEN, (void *)&com_info->msg_tx, sizeof(struct inverse_msg));
+
+  if (result.status != COBS_ENCODE_OK) {
+    printk("Error: COBS Encoded Failed %d\n", result.status);
+    return;
+  }
+  tx_buf[MSG_LEN - 1] = 0x00;
+  for (int i = 0; i < MSG_LEN; i++) {
+    uart_poll_out(latte_panda_uart, tx_buf[i]);
+  }
+}
 int velocity_callback(const float *velocity_buffer, int buffer_len,
                       int wheels_per_side) {
   if (buffer_len < wheels_per_side * 2) {
@@ -224,46 +305,62 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
 }
 
 /* work handler for stepper motor write*/
-void arm_stepper_work_handler() {
-  if (k_mutex_lock(&ch_writer_mutex, K_NO_WAIT) != 0) {
-    return;
-  }
-  k_mutex_unlock(&ch_writer_mutex);
-  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
-  if (ch_reader_cnt == 0) {
-    k_sem_take(&ch_sem, K_FOREVER);
-  }
-  ch_reader_cnt++;
-  k_mutex_unlock(&ch_reader_cnt_mutex);
-  arm.cmd[0] = channel[4];
-  arm.cmd[1] = channel[5];
-  arm.cmd[2] = channel[6];
-  /* writing to stepper motor */
+void arm_stepper_work_handler(int *dir) {
   for (int i = 0; i < 3; i++) {
-    if (arm.cmd[i] > 1000) {
-      arm.pos[i] = Stepper_motor_write(&stepper[i], HIGH_PULSE, arm.pos[i]);
-    } else if (arm.cmd[i] < 800)
-      arm.pos[i] = Stepper_motor_write(&stepper[i], LOW_PULSE, arm.pos[i]);
-    else
+    if (dir == NULL)
       continue;
+    arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
   }
-  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
-  ch_reader_cnt--;
-  if (ch_reader_cnt == 0) {
-    k_sem_give(&ch_sem);
-  }
-  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
 }
+// void arm_stepper_work_handler() {
+//   if (k_mutex_lock(&ch_writer_mutex, K_NO_WAIT) != 0) {
+//     return;
+//   }
+//   k_mutex_unlock(&ch_writer_mutex);
+//   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
+//   if (ch_reader_cnt == 0) {
+//     k_sem_take(&ch_sem, K_FOREVER);
+//   }
+//   ch_reader_cnt++;
+//   k_mutex_unlock(&ch_reader_cnt_mutex);
+//   arm.cmd[0] = channel[4];
+//   arm.cmd[1] = channel[5];
+//   arm.cmd[2] = channel[6];
+//   /* writing to stepper motor */
+//   for (int i = 0; i < 3; i++) {
+//     if (arm.cmd[i] > 1000) {
+//       arm.pos[i] = Stepper_motor_write(&stepper[i], HIGH_PULSE, arm.pos[i]);
+//     } else if (arm.cmd[i] < 800)
+//       arm.pos[i] = Stepper_motor_write(&stepper[i], LOW_PULSE, arm.pos[i]);
+//     else
+//       continue;
+//   }
+//   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
+//   ch_reader_cnt--;
+//   if (ch_reader_cnt == 0) {
+//     k_sem_give(&ch_sem);
+//   }
+//   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
+// }
 
 /* timer to write to stepper motors*/
 void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
-  arm_stepper_work_handler();
+  arm.dir[0] =
+      update_proportional(com.msg_tx.turn_table, 0); // arm.baseIMU.yaw;
+  arm.dir[1] = update_proportional(com.msg_tx.first_link, arm.lowerIMU.pitch);
+  arm.dir[2] =
+      update_proportional((com.msg_tx.second_link), arm.upperIMU.pitch);
+  arm.dir[3] = update_proportional((com.msg_tx.pitch), arm.endIMU.pitch);
+  arm.dir[4] = update_proportional(com.msg_tx.roll, arm.endIMU.roll);
+  arm_stepper_work_handler(arm.dir);
 }
 K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
 
 int main() {
 
   printk("Tarzan version %s\nFile: %s\n", GIT_BRANCH_NAME, __FILE__);
+
+  int err, dtr;
 
   /* initializing work queue */
   k_work_queue_init(&work_q);
@@ -277,6 +374,7 @@ int main() {
   k_work_init(&sbus_work_item, sbus_work_handler);
   k_work_init(&(drive.drive_work_item), drive_work_handler);
   k_work_init(&(arm.imu_work_item), arm_imu_work_handler);
+  k_work_init(&(com.cobs_rx_work_item), cobs_rx_work_handler);
   /* initializing drive configs */
   const struct DiffDriveConfig tmp_drive_config = {
       .wheel_separation = 0.77f,
@@ -291,13 +389,38 @@ int main() {
   drive.drive_config = tmp_drive_config;
   drive.drive_init = diffdrive_init(&(drive.drive_config), feedback_callback,
                                     velocity_callback);
+  /* initialize imu joints */
+  struct joint initialize_imu = {{0, 0, 0}, {0, 0, 0}, 0, 0, 0, {0, 0, 0}};
+  arm.upperIMU = initialize_imu;
+  arm.lowerIMU = initialize_imu;
+  arm.endIMU = initialize_imu;
 
-  /* uart ready check */
-  if (!device_is_ready(uart_dev)) {
-    printk("UART device not ready");
+  /* sbus uart ready check */
+  if (!device_is_ready(sbus_uart)) {
+    printk("SBUS UART device not ready");
+  }
+  /* latte panda uart ready check */
+  if (!device_is_ready(latte_panda_uart)) {
+    printk("LATTE PANDA UART device not ready");
+  }
+  /* get uart line control */
+  uart_line_ctrl_get(latte_panda_uart, UART_LINE_CTRL_DTR, &dtr);
+  if (!dtr) {
+    printk("Unable to get uart line contorl\n");
   }
   /* set sbus uart for interrupt */
-  int err = uart_irq_callback_user_data_set(uart_dev, serial_cb, NULL);
+  err = uart_irq_callback_user_data_set(sbus_uart, sbus_cb, NULL);
+  if (err < 0) {
+    if (err == -ENOTSUP) {
+      printk("Interrupt-driven UART API support 1005not enabled");
+    } else if (err == -ENOSYS) {
+      printk("UART device does not support interrupt-driven API");
+    } else {
+      printk("Error setting UART callback: %d", err);
+    }
+  }
+  /* set latte panda uart for interrupt */
+  err = uart_irq_callback_user_data_set(latte_panda_uart, cobs_cb, NULL);
   if (err < 0) {
     if (err == -ENOTSUP) {
       printk("Interrupt-driven UART API support 1005not enabled");
@@ -339,16 +462,12 @@ int main() {
     }
   }
   /* IMU ready checks */
-  if (!device_is_ready(imu[0])) {
-    printk("Device %s is not ready\n", imu[0]->name);
+  for (int i = 0; i < 3; i++) {
+    if (!device_is_ready(imu[i])) {
+      printk("IMU:Device %s is not ready\n", imu[i]->name);
+    }
   }
-  if (!device_is_ready(imu[1])) {
-    printk("Device %s is not ready\n", imu[1]->name);
-  }
-  if (!device_is_ready(imu[2])) {
-    printk("Device %s is not ready\n", imu[2]->name);
-  }
-  // /* Calibrating IMUs */
+  /* Calibrating IMUs */
   printk("Calibrating IMU %s\n", imu[0]->name);
   if (calibration(imu[0], &arm.baseIMU)) {
     printk("Calibration failed for device %s\n", imu[0]->name);
@@ -367,7 +486,9 @@ int main() {
   k_work_queue_start(&work_q, stack_area, K_THREAD_STACK_SIZEOF(stack_area),
                      PRIORITY, NULL);
   /* enable interrupt to receive sbus data */
-  uart_irq_rx_enable(uart_dev);
+  uart_irq_rx_enable(sbus_uart);
+  /* enablke interrupt to receive cobs data */
+  uart_irq_rx_enable(latte_panda_uart);
   /* enabling stepper timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
 }
