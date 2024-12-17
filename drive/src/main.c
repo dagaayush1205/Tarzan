@@ -81,11 +81,10 @@ struct drive_arg {
 } drive;
 /* struct for arm variables */
 struct arm_arg {
-  uint16_t direction[5];
+  // uint16_t direction[5];
   int dir[5];
   int pos[5];
   struct k_work imu_work_item;
-  struct joint baseIMU;
   struct joint lowerIMU;
   struct joint upperIMU;
   struct joint endIMU;
@@ -94,8 +93,8 @@ struct arm_arg {
 struct com_arg {
   struct k_work cobs_rx_work_item;
   struct k_work cobs_tx_work_item;
-  struct inverse_msg msg_rx;
-  struct inverse_msg msg_tx;
+  struct inverse_msg msg_rx; // to store decoded mssg
+  struct inverse_msg msg_tx; // to store encoded mssg
 } com;
 
 int ch_reader_cnt;          // no. of readers accessing channels
@@ -299,14 +298,14 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   struct arm_arg *arm_info =
       CONTAINER_OF(imu_work_ptr, struct arm_arg, imu_work_item);
-  process_mpu6050(imu[0], &arm_info->baseIMU);
+  process_mpu6050(imu[0], &arm_info->endIMU);
   process_mpu6050(imu[1], &arm_info->lowerIMU);
   process_mpu6050(imu[2], &arm_info->upperIMU);
 }
 
 /* work handler for stepper motor write*/
 void arm_stepper_work_handler(int *dir) {
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < 5; i++) {
     if (dir == NULL)
       continue;
     arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
@@ -469,15 +468,15 @@ int main() {
   }
   /* Calibrating IMUs */
   printk("Calibrating IMU %s\n", imu[0]->name);
-  if (calibration(imu[0], &arm.baseIMU)) {
+  if (calibration(imu[0], &arm.lowerIMU)) {
     printk("Calibration failed for device %s\n", imu[0]->name);
   }
   printk("Calibrating IMU %s\n", imu[1]->name);
-  if (calibration(imu[1], &arm.lowerIMU)) {
+  if (calibration(imu[1], &arm.upperIMU)) {
     printk("Calibration failed for device %s\n", imu[1]->name);
   }
   printk("Calibrating IMU %s\n", imu[2]->name);
-  if (calibration(imu[2], &arm.upperIMU)) {
+  if (calibration(imu[2], &arm.endIMU)) {
     printk("Calibration failed for device %s\n", imu[2]->name);
   }
   printk("\nInitialization completed successfully!\n");
