@@ -105,3 +105,11 @@ void process_mpu6050(const struct device *dev, struct joint *IMU) {
   } else
     printk("sample fetch/get failed: %d\n", rc);
 }
+int update_proportional(float target_angel, float current_angel) {
+  if (target_angel > current_angel + 0.5)
+    return HIGH_PULSE;
+  else if (target_angel < current_angel - 0.5)
+    return LOW_PULSE;
+  else
+    return NULL;
+}
