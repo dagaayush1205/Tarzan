@@ -404,6 +404,9 @@ int main() {
   if (!device_is_ready(latte_panda_uart)) {
     printk("LATTE PANDA UART device not ready");
   }
+  if (usb_enable(NULL)) {
+    return 0;
+  }
   /* get uart line control */
   uart_line_ctrl_get(latte_panda_uart, UART_LINE_CTRL_DTR, &dtr);
   if (!dtr) {
