@@ -150,8 +150,8 @@ void cobs_cb(const struct device *dev, void *user_data) {
         continue;
       }
       k_msgq_put(&msgq_rx, rx_buf, K_NO_WAIT);
-      k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
       k_work_submit_to_queue(&work_q, &com.cobs_rx_work_item);
+      k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
       cobs_bytes_read = 0;
     } else if (cobs_bytes_read < sizeof(rx_buf)) {
       rx_buf[cobs_bytes_read++] = c;
@@ -197,12 +197,12 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
 void cobs_tx_work_handler(struct k_work *cobs_tx_work_ptr) {
   struct com_arg *com_info =
       CONTAINER_OF(cobs_tx_work_ptr, struct com_arg, cobs_tx_work_item);
-  k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
+  //k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 
   com_info->msg_tx.turn_table = 0;
-  com_info->msg_tx.first_link = 0;
-  com_info->msg_tx.second_link = 0;
-  com_info->msg_tx.pitch = 0;
+  com_info->msg_tx.first_link = arm.lowerIMU.pitch;
+  com_info->msg_tx.second_link = arm.upperIMU.pitch;
+  com_info->msg_tx.pitch = arm.endIMU.pitch;
   com_info->msg_tx.roll = 0;
   com_info->msg_tx.x = 0;
   com_info->msg_tx.y = 0;
