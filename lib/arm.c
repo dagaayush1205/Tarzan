@@ -1,6 +1,7 @@
 #include <kyvernitis/lib/kyvernitis.h>
 
 #include <Tarzan/lib/arm.h>
+#include <math.h>
 
 /* wrapper around gpio pin set dt which returns updated position
  * param:
@@ -11,10 +12,11 @@ int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos) {
   if (dir == HIGH_PULSE) {
     gpio_pin_set_dt(&(motor->dir), 1);
     pos += 1; // clockwise
-  } else {
+  } else if (dir == LOW_PULSE) {
     gpio_pin_set_dt(&(motor->dir), 0);
     pos -= 1; // anticlockwise
-  }
+  } else
+    return pos;
   switch (pos & 0x03) {
   case 0:
     gpio_pin_set_dt(&(motor->step), 0);
@@ -106,10 +108,13 @@ void process_mpu6050(const struct device *dev, struct joint *IMU) {
     printk("sample fetch/get failed: %d\n", rc);
 }
 int update_proportional(float target_angel, float current_angel) {
-  if (target_angel > current_angel + 0.5)
-    return HIGH_PULSE;
-  else if (target_angel < current_angel - 0.5)
-    return LOW_PULSE;
-  else
-    return NULL;
+  float error = fabs(target_angel - current_angel);
+  if (error <= 0.5)
+    return (int)NULL;
+  else {
+    if (target_angel > current_angel)
+      return HIGH_PULSE;
+    else // target_angel<current_angel
+      return LOW_PULSE;
+  }
 }
