@@ -478,6 +478,7 @@ int main() {
   printk("Calibrating IMU %s\n", imu[0]->name);
   if (calibration(imu[0], &arm.lowerIMU)) {
     printk("Calibration failed for device %s\n", imu[0]->name);
+    return ;
   }
   printk("Calibrating IMU %s\n", imu[1]->name);
   if (calibration(imu[1], &arm.upperIMU)) {
@@ -486,6 +487,7 @@ int main() {
   printk("Calibrating IMU %s\n", imu[2]->name);
   if (calibration(imu[2], &arm.endIMU)) {
     printk("Calibration failed for device %s\n", imu[2]->name);
+    return 0;
   }
   printk("\nInitialization completed successfully!\n");
 
