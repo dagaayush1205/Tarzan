@@ -149,7 +149,7 @@ void cobs_cb(const struct device *dev, void *user_data) {
       }
       k_msgq_put(&msgq_rx, rx_buf, K_NO_WAIT);
       k_work_submit_to_queue(&work_q, &com.cobs_rx_work_item);
-      k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
+      // k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
       cobs_bytes_read = 0;
     } else if (cobs_bytes_read < sizeof(rx_buf)) {
       rx_buf[cobs_bytes_read++] = c;
@@ -343,16 +343,20 @@ void arm_stepper_work_handler(int *dir) {
 
 /* timer to write to stepper motors*/
 void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
-  arm.dir[0] =
-      update_proportional(com.msg_tx.turn_table, 0); // arm.baseIMU.yaw;
-  arm.dir[1] = update_proportional(com.msg_tx.first_link, arm.lowerIMU.pitch);
-  arm.dir[2] =
-      update_proportional((com.msg_tx.second_link), arm.upperIMU.pitch);
+  arm.dir[0] = update_proportional(com.msg_tx.turn_table, 0); // arm.baseIMU.yaw;
+  arm.dir[1] = update_proportional((50.0) * M_PI/180, arm.lowerIMU.pitch);
+  arm.dir[2] = update_proportional((com.msg_tx.second_link), arm.upperIMU.pitch);
+  printk("target: %f \t current: %f\n" , 180 * (com.msg_tx.first_link)/M_PI , 180 * (arm.endIMU.pitch) / M_PI);
   arm.dir[3] = update_proportional((com.msg_tx.pitch), arm.endIMU.pitch);
   arm.dir[4] = update_proportional(com.msg_tx.roll, arm.endIMU.roll);
   arm_stepper_work_handler(arm.dir);
+  // arm_imu_work_handler(&arm.imu_work_item);
+}
+void imu_update_timer_handler(struct k_timer *imu_update_timer_ptr){
+  arm_imu_work_handler(&arm.imu_work_item);
 }
 K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
+K_TIMER_DEFINE(imu_update_timer , imu_update_timer_handler , NULL);
 
 int main() {
 
@@ -492,6 +496,7 @@ int main() {
   /* enablke interrupt to receive cobs data */
   uart_irq_rx_enable(latte_panda_uart);
   /* enabling stepper timer */
+  k_timer_start(&imu_update_timer , K_MSEC(1) , K_MSEC(20));
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
-  k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
+  // k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 }
