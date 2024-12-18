@@ -14,11 +14,11 @@
 //110101000
 LOG_MODULE_REGISTER(stepper_test, CONFIG_LOG_DEFAULT_LEVEL);
 static const struct device *const uart_dev =
-    DEVICE_DT_GET(DT_ALIAS(mother_uart)); // data from SBUS
+    DEVICE_DT_GET(DT_ALIAS(sbus_uart)); // data from SBUS
 static const struct device *const uart_debug =
     DEVICE_DT_GET(DT_ALIAS(debug_uart)); // debugger
 
-const struct device *const base = DEVICE_DT_GET(DT_ALIAS(imu_turn_table));
+const struct device *const base = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
 # define M_PI  3.14159265358979323846
 
  float accel_offset [3] = {-0.1, 0.04, -0.59}, gyro_offset[3] = {0.016, -0.055, 0.005};
