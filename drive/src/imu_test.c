@@ -150,5 +150,6 @@ int main() {
     msg_tx.z = 0;
     // printk("%f %f\n", lowerIMU.pitch, upperIMU.pitch);
     send_imu_data(tx_buf, &msg_tx);
+    k_sleep(K_MSEC(10));
   }
 }
