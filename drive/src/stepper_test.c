@@ -47,30 +47,28 @@ float stepInterval;
 float true_acc[3] = {0, 0, -9.8};
 float true_gyro[3] = {0, 0, 0};
 
-int calibration(const struct device *dev) {
+int _calibration(const struct device *dev) {
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
 
-  // for (int i = 0; i < 1000; i++) {
+   for (int i = 0; i < 1000; i++) {
   //
-  //   int rc = sensor_sample_fetch(dev);
-  //
-  //   if (rc == 0)
-  //     rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
-  //
-  //   if (rc == 0)
-  //     rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
-  //
-  //   for (int i = 0; i < 3; i++) {
-  //     accel_offset[i] += (sensor_value_to_double(&accel[i]) - true_acc[i]);
-  //     gyro_offset[i] += (sensor_value_to_double(&gyro[i]) - true_gyro[i]); 
-  //   }
-  //   k_sleep(K_MSEC(1));
-  // }
-  // for (int i = 0; i < 3; i++) {
-  //   accel_offset[i] = accel_offset[i] / 1000.0;
-  //   gyro_offset[i] = gyro_offset[i] / 1000.0;
-  // }
+     int rc = sensor_sample_fetch(dev);
+
+     if (rc == 0)
+       rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+
+     if (rc == 0)
+       rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
+
+     for (int i = 0; i < 3; i++) {
+       gyro_offset[i] += (sensor_value_to_double(&gyro[i]) - true_gyro[i]); 
+     }
+     k_sleep(K_MSEC(1));
+   }
+   for (int i = 0; i < 3; i++) {
+     gyro_offset[i] = gyro_offset[i] / 1000.0;
+   }
   printk("Calibration done\n");
   printk("accel_offset: %0.4f %0.4f %0.4f\n", accel_offset[0], accel_offset[1], accel_offset[2]);
   printk("gyroOffset: %0.4f %0.4f %0.4f\n", gyro_offset[0], gyro_offset[1], gyro_offset[2]);
@@ -183,7 +181,7 @@ int main() {
     return 0;
   }
   printk("Calibrating...\n");
-  calibration(base); 
+  _calibration(base); 
 
   for (size_t i = 0U; i < 3; i++) {
     if (!gpio_is_ready_dt(&stepper[i].dir)) {
