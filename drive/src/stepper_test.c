@@ -159,13 +159,13 @@ int _Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd, int po
   return pos;
 }
 
-void arm_joints(struct k_work *work) {
+void _arm_joints(struct k_work *work) {
   uint16_t cmd[2] = {ch[0], ch[1]};
   for (int i=0 ; i<2; i++) {
-    pos[i] = Stepper_motor_write(&stepper[i], cmd[i], pos[i]);
+    pos[i] = _Stepper_motor_write(&stepper[i], cmd[i], pos[i]);
     }
   }
-K_WORK_DEFINE(my_work, arm_joints);
+K_WORK_DEFINE(my_work, _arm_joints);
 void my_timer_handler(struct k_timer *dummy) { 
   k_work_submit(&my_work); }
 K_TIMER_DEFINE(my_timer, my_timer_handler, NULL);
