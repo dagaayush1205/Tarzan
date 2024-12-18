@@ -76,7 +76,7 @@ int _calibration(const struct device *dev) {
   return 0;
 }
 
-static int process_mpu6050(const struct device *dev, int n) {
+static int _process_mpu6050(const struct device *dev, int n) {
   
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
@@ -96,27 +96,27 @@ static int process_mpu6050(const struct device *dev, int n) {
   if (rc == 0)
     rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
 
-  a[0] = sensor_value_to_double(&accel[0]) - accel_offset[0];
-  a[1] = sensor_value_to_double(&accel[1]) - accel_offset[1];
-  a[2] = sensor_value_to_double(&accel[2]) - accel_offset[2];
+  a[0] = sensor_value_to_double(&accel[0]);
+  a[1] = sensor_value_to_double(&accel[1]);
+  a[2] = sensor_value_to_double(&accel[2]);
   g[0] = sensor_value_to_double(&gyro[0]) - gyro_offset[0];
   g[1] = sensor_value_to_double(&gyro[1]) - gyro_offset[1];
   g[3] = sensor_value_to_double(&gyro[2]) - gyro_offset[2];
 
-  if (rc == 0) {
    // printk("%d accel % .1f % .1f % .1f m/s/s\t gyro % .1f % .1f % .1f rad/s\n", n, a[0], a[1], a[2], g[0], g[1], g[2]);
   
+  if (rc != 0) printk("Sample get/failed\n");
     float pitch_acc = (180 * atan2(-1 * a[0], sqrt(pow(a[1], 2) + pow(a[2], 2))) /M_PI);
     angle = k * (angle + (g[1]) * (dt)) + (1 - k) * pitch_acc;
     printk("ANGLE: % .0f\n", angle);
     if(target_angle > angle+2){
       ch[0]=1500;
-      ch[1]=1500;
+      ch[1]=500;
       printk("Move down\n");
     }
     else if(target_angle < angle-2){
       ch[0]=500; 
-      ch[1]=500; 
+      ch[1]=1500; 
       printk("Move up\n");
     }
     else {
@@ -210,6 +210,7 @@ int main() {
   printk("Initialization completed successfully!\n");
   k_timer_start(&my_timer, K_USEC(120), K_USEC(50));
   while(true){
-    process_mpu6050(base, 3); 
+    _process_mpu6050(base, 3);
+    k_sleep(K_MSEC(100));
   }
 }
