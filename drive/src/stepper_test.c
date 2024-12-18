@@ -23,7 +23,7 @@ const struct device *const base = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
 
  float accel_offset [3] = {-0.1, 0.04, -0.59}, gyro_offset[3] = {0.016, -0.055, 0.005};
 float angle = 0, k = 0.89; // k here is tau
-float target_angle = -35;
+float target_angle = -50;
 uint64_t prev_time = 0;
 // DT spec for stepper
 const struct stepper_motor stepper[3] = {
