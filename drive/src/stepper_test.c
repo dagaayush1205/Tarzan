@@ -125,8 +125,7 @@ static int _process_mpu6050(const struct device *dev, int n) {
       printk("target angle reached\n");
     }
 
-  } else
-    printk("sample fetch/get failed: %d\n", rc);
+    // printk("sample fetch/get failed: %d\n", rc);
   return rc;
 }
 
