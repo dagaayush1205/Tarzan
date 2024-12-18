@@ -130,8 +130,7 @@ static int _process_mpu6050(const struct device *dev, int n) {
   return rc;
 }
 
-int Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd,
-                        int pos) {
+int _Stepper_motor_write(const struct stepper_motor *motor, uint16_t cmd, int pos) {
 
   if (abs(cmd - channel_range[1]) < 200) {
     return pos;
