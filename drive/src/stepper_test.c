@@ -27,12 +27,12 @@ float target_angle = -50;
 uint64_t prev_time = 0;
 // DT spec for stepper
 const struct stepper_motor stepper[3] = {
-    {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), dir_gpios),
-     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), step_gpios)},
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), dir_gpios),
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), step_gpios)},
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), dir_gpios),
-     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), step_gpios)}};
+     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), step_gpios)},
+    {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor4), dir_gpios),
+     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor4), step_gpios)}};
 
 // creating mssg queue to store data
 K_MSGQ_DEFINE(uart_msgq, sizeof(uint8_t), 250, 1);
