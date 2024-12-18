@@ -299,7 +299,8 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   process_mpu6050(imu[1], &arm_info->endIMU);
   process_mpu6050(imu[2], &arm_info->lowerIMU);
   // process_mpu6050(imu[2], &arm_info->upperIMU); 
-  k_work_submit_to_queue(&work_q, &(com.cobs_tx_work_item));
+  cobs_tx_work_handler(&com.cobs_tx_work_item);
+  // k_work_submit_to_queue(&work_q, &(com.cobs_tx_work_item));
 }
 
 /* work handler for stepper motor write*/
