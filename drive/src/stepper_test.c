@@ -8,6 +8,7 @@
 #include <zephyr/logging/log.h>
 #include <kyvernitis/lib/kyvernitis.h>
 
+#include <Tarzan/lib/arm.h>
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
 //110101000
