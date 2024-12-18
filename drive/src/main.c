@@ -24,11 +24,9 @@
 #define STEPPER_TIMER 100 // stepper pulse width in microseconds
 
 /* sbus uart */
-static const struct device *const sbus_uart =
-    DEVICE_DT_GET(DT_ALIAS(sbus_uart));
+static const struct device *const sbus_uart = DEVICE_DT_GET(DT_ALIAS(sbus_uart));
 /* latte panda uart */
-static const struct device *const latte_panda_uart =
-    DEVICE_DT_GET(DT_ALIAS(latte_panda_uart));
+static const struct device *const latte_panda_uart = DEVICE_DT_GET(DT_ALIAS(latte_panda_uart));
 
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id)                                            \
