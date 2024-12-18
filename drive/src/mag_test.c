@@ -11,7 +11,6 @@ const struct device *const rover = DEVICE_DT_GET(DT_ALIAS(mm_rover));
 float getCompassDegree(struct sensor_value x , struct sensor_value y)
 {
   float compass = 0.0;
-  // compass = atan2((float)x.val1 + x.val2/1000000.0, (float)y.val1 + y.val2/1000000.0);
   compass = atan2(sensor_value_to_float(&x), sensor_value_to_float(&y))-M_PI/2;
   if (compass < 0) {
     compass += 2 * M_PI;
