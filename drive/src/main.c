@@ -195,7 +195,7 @@ void cobs_tx_work_handler(struct k_work *cobs_tx_work_ptr) {
   //k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 
   com_info->msg_tx.turn_table = 0;
-  com_info->msg_tx.first_link = arm.lowerIMU.pitch;
+  com_info->msg_tx.first_link = -1*arm.lowerIMU.pitch;
   com_info->msg_tx.second_link = arm.upperIMU.pitch;
   com_info->msg_tx.pitch = arm.endIMU.pitch;
   com_info->msg_tx.roll = 0;
