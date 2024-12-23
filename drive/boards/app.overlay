@@ -69,7 +69,7 @@
 	
 		stepper_motor_3: motor_3 { 
 			label = "Second Link";
-			dir-gpios = <&gpiog 14 GPIO_ACTIVE_LOW>; 
+			dir-gpios = <&gpiog 14 GPIO_ACTIVE_HIGH>; 
 			step-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>; 
 		};
 		stepper_motor_4: motor_4 { 
