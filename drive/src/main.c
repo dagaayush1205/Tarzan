@@ -48,11 +48,9 @@ const struct stepper_motor stepper[5] = {
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), dir_gpios),
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), step_gpios)}};
 /*DT spec for IMU */
-const struct device *const imu[3] = {
-    DEVICE_DT_GET(DT_ALIAS(imu_lower_joint)),
-    DEVICE_DT_GET(DT_ALIAS(imu_upper_joint)),
-    DEVICE_DT_GET(DT_ALIAS(imu_pitch_roll)),
-};
+const struct device* imu_lower_joint = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
+const struct device* imu_upper_joint = DEVICE_DT_GET(DT_ALIAS(imu_pitch_roll));
+const struct device* imu_pitch_roll = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* defining cobs message queue */
@@ -296,11 +294,21 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   struct arm_arg *arm_info =
       CONTAINER_OF(imu_work_ptr, struct arm_arg, imu_work_item);
-  process_mpu6050(imu[1], &arm_info->endIMU);
-  process_mpu6050(imu[2], &arm_info->lowerIMU);
-  // process_mpu6050(imu[2], &arm_info->upperIMU); 
-  cobs_tx_work_handler(&com.cobs_tx_work_item);
-  // k_work_submit_to_queue(&work_q, &(com.cobs_tx_work_item));
+  if (process_mpu6050(imu_lower_joint, &(arm_info->lowerIMU)) == 1) printk("No data from imu_lower_joint: %s\n", imu_lower_joint->name);
+  if (process_mpu6050(imu_upper_joint, &(arm_info->upperIMU)) == 1) printk("No data from imu_upper_joint: %s\n", imu_upper_joint->name);
+  // if (process_mpu6050(imu_pitch_roll, &(arm_info->endIMU)) == 1) printk("No data from imu_pitch_roll: %s\n", imu_pitch_roll->name);
+
+  printk("IMU: %03.3f %03.3f %03.3f | Target: %03.3f %03.3f",
+         (180*arm.lowerIMU.pitch)/M_PI, (180*arm.upperIMU.pitch)/M_PI,
+         (180*arm.endIMU.pitch)/M_PI,
+         (180*com.msg_rx.first_link)/M_PI, (180*(com.msg_rx.second_link-com.msg_rx.first_link))/M_PI);
+  arm.dir[0] = update_proportional(com.msg_rx.turn_table, 0); // arm.baseIMU.yaw;
+  arm.dir[1] = update_proportional(com.msg_rx.first_link, -1*arm.lowerIMU.pitch);
+  arm.dir[2] = update_proportional((com.msg_rx.second_link)-(com.msg_rx.first_link), arm.upperIMU.pitch);
+  arm.dir[3] = update_proportional((com.msg_rx.pitch), arm.endIMU.pitch);
+  arm.dir[4] = update_proportional(com.msg_rx.roll, arm.endIMU.roll);
+  printk(" | Move: %d%d %d%d\n", arm.dir[1] >> 1 , arm.dir[1] & 0b01, arm.dir[2] >> 1, arm.dir[2] & 0b01);
+  k_work_submit_to_queue(&work_q, &(com.cobs_tx_work_item));
 }
 
 /* work handler for stepper motor write*/
@@ -344,12 +352,6 @@ void arm_stepper_work_handler(int *dir) {
 
 /* timer to write to stepper motors*/
 void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
-  arm.dir[0] = update_proportional(com.msg_tx.turn_table, 0); // arm.baseIMU.yaw;
-  arm.dir[1] = update_proportional((50.0) * M_PI/180, arm.lowerIMU.pitch);
-  arm.dir[2] = update_proportional((com.msg_tx.second_link), arm.upperIMU.pitch);
-  printk("target: %f \t current: %f\n" , 180 * (com.msg_tx.first_link)/M_PI , 180 * (arm.endIMU.pitch) / M_PI);
-  arm.dir[3] = update_proportional((com.msg_tx.pitch), arm.endIMU.pitch);
-  arm.dir[4] = update_proportional(com.msg_tx.roll, arm.endIMU.roll);
   arm_stepper_work_handler(arm.dir);
   // arm_imu_work_handler(&arm.imu_work_item);
 }
@@ -469,24 +471,25 @@ int main() {
     }
   }
   /* IMU ready checks */
-  for (int i = 0; i < 3; i++) {
-    if (!device_is_ready(imu[i])) {
-      printk("IMU:Device %s is not ready\n", imu[i]->name);
-    }
-  }
+  if (!device_is_ready(imu_lower_joint))
+    printk("Lower joint IMU %s: Not ready\n", imu_lower_joint->name);
+  if (!device_is_ready(imu_upper_joint))
+    printk("Upper joint IMU %s: Not ready\n", imu_upper_joint->name);
+  if (!device_is_ready(imu_pitch_roll))
+    printk("Pitch Roll IMU %s: Not ready\n", imu_pitch_roll->name);
+
+  printk("Calibrating IMUs\n");
   /* Calibrating IMUs */
-  printk("Calibrating IMU %s\n", imu[0]->name);
-  if (calibration(imu[0], &arm.lowerIMU)) {
-    printk("Calibration failed for device %s\n", imu[0]->name);
-    return ;
+  if (calibration(imu_lower_joint, &arm.lowerIMU)) {
+    printk("Lower joint IMU %s: Calibration failed\n", imu_lower_joint->name);
+    return 0;
   }
-  printk("Calibrating IMU %s\n", imu[1]->name);
-  if (calibration(imu[1], &arm.upperIMU)) {
-    printk("Calibration failed for device %s\n", imu[1]->name);
+  if (calibration(imu_upper_joint, &arm.upperIMU)) {
+    printk("Upper joint IMU %s: Calibration failed\n", imu_upper_joint->name);
+    return 0;
   }
-  printk("Calibrating IMU %s\n", imu[2]->name);
-  if (calibration(imu[2], &arm.endIMU)) {
-    printk("Calibration failed for device %s\n", imu[2]->name);
+  if (calibration(imu_pitch_roll, &arm.endIMU)) {
+    printk("Pitch Roll IMU %s: Calibration failed\n", imu_pitch_roll->name);
     return 0;
   }
   printk("\nInitialization completed successfully!\n");
