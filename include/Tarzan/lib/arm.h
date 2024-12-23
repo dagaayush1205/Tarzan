@@ -1,11 +1,14 @@
 #pragma once
 #include <stdint.h>
 #include <zephyr/device.h>
-#define HIGH_PULSE 1
-#define LOW_PULSE 0
 #define M_PI 3.14159265358979323846
 #define TAU 0.90
 
+enum StepperDirection {
+  LOW_PULSE = 0,
+  HIGH_PULSE = 1,
+  STOP_PULSE = 2,
+};
 /* store imu related data */
 struct joint {
   double accel[3];
@@ -28,8 +31,8 @@ struct inverse_msg {
 };
 int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos);
 
-void process_mpu6050(const struct device *dev, struct joint *IMU);
+int process_mpu6050(const struct device *dev, struct joint *IMU);
 
 int calibration(const struct device *dev, struct joint *IMU);
 
-int update_proportional(float target_angle, float current_angel);
+enum StepperDirection update_proportional(float target_angle, float current_angel);

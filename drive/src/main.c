@@ -77,8 +77,7 @@ struct drive_arg {
 } drive;
 /* struct for arm variables */
 struct arm_arg {
-  // uint16_t direction[5];
-  int dir[5];
+  enum StepperDirection dir[5];
   int pos[5];
   struct k_work imu_work_item;
   struct joint lowerIMU;
@@ -312,11 +311,18 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
 }
 
 /* work handler for stepper motor write*/
-void arm_stepper_work_handler(int *dir) {
+void arm_stepper_work_handler(enum StepperDirection *dir) {
   for (int i = 0; i < 5; i++) {
-    if (dir == NULL)
-      continue;
-    arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
+    switch (dir[i]) {
+      case STOP_PULSE:
+        continue;
+      case LOW_PULSE:
+        arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
+        continue;
+      case HIGH_PULSE:
+        arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
+        continue;
+    }
   }
 }
 // void arm_stepper_work_handler() {

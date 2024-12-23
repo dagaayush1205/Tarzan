@@ -69,7 +69,7 @@ int calibration(const struct device *dev, struct joint *IMU) {
  * dev: imu device
  * IMU: struct joint
  * returns: 0 if succesfull*/
-void process_mpu6050(const struct device *dev, struct joint *IMU) {
+int process_mpu6050(const struct device *dev, struct joint *IMU) {
 
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
@@ -78,15 +78,20 @@ void process_mpu6050(const struct device *dev, struct joint *IMU) {
 
   double dt = (current_time - IMU->prev_time) / 1000.0;
 
-  IMU->prev_time = current_time;
 
+  // printf("%s ", dev->name);
   int rc = sensor_sample_fetch(dev);
+  // printf("Done\n");
 
+  if (rc) return 1;
   if (rc == 0)
     rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
   if (rc == 0)
     rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
+  // rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+  // rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
 
+  IMU->prev_time = current_time;
   IMU->accel[0] = sensor_value_to_double(&accel[0]);
   IMU->accel[1] = sensor_value_to_double(&accel[1]);
   IMU->accel[2] = sensor_value_to_double(&accel[2]);
@@ -94,6 +99,7 @@ void process_mpu6050(const struct device *dev, struct joint *IMU) {
   IMU->gyro[1] = sensor_value_to_double(&gyro[1]) - IMU->gyro_offset[1];
   IMU->gyro[2] = sensor_value_to_double(&gyro[2]) - IMU->gyro_offset[2];
 
+  // printk("%03.3f %03.3f %03.3f | %03.3f %03.3f %03.3f\n", IMU->accel[0], IMU->accel[1], IMU->accel[2], IMU->gyro[0], IMU->gyro[1], IMU->gyro[2]);
   if (rc == 0) {
 
     double pitch_acc = (atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) +
@@ -104,17 +110,19 @@ void process_mpu6050(const struct device *dev, struct joint *IMU) {
         TAU * (IMU->pitch + (IMU->gyro[1]) * (dt)) + (1 - TAU) * pitch_acc;
     IMU->roll =
         TAU * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - TAU) * roll_acc;
-  } else
+  } else {
     printk("sample fetch/get failed: %d\n", rc);
-}
-int update_proportional(float target_angel, float current_angel) {
-  float error = fabs(target_angel - current_angel);
-  if (error <= 0.5)
-    return (int)NULL;
-  else {
-    if (target_angel > current_angel)
-      return HIGH_PULSE;
-    else // target_angel<current_angel
-      return LOW_PULSE;
+    return 1;
   }
+  return 0;
+}
+enum StepperDirection update_proportional(float target_angel, float current_angel) {
+  float error = fabs(target_angel - current_angel);
+  if (error <= 0.1)
+    return STOP_PULSE;
+  // float diff = target_angel - current_angel;
+  if (target_angel > current_angel)
+    return HIGH_PULSE;
+  else // target_angel<current_angel
+    return LOW_PULSE;
 }
