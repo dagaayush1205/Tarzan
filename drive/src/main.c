@@ -353,13 +353,9 @@ void arm_stepper_work_handler(int *dir) {
 /* timer to write to stepper motors*/
 void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
   arm_stepper_work_handler(arm.dir);
-  // arm_imu_work_handler(&arm.imu_work_item);
-}
-void imu_update_timer_handler(struct k_timer *imu_update_timer_ptr){
-  arm_imu_work_handler(&arm.imu_work_item);
+  k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 }
 K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
-K_TIMER_DEFINE(imu_update_timer , imu_update_timer_handler , NULL);
 
 int main() {
 
@@ -502,7 +498,6 @@ int main() {
   /* enablke interrupt to receive cobs data */
   uart_irq_rx_enable(latte_panda_uart);
   /* enabling stepper timer */
-  k_timer_start(&imu_update_timer , K_MSEC(1) , K_MSEC(20));
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
-  // k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
+  k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 }
