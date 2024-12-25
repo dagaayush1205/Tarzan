@@ -78,18 +78,12 @@ int process_mpu6050(const struct device *dev, struct joint *IMU) {
 
   double dt = (current_time - IMU->prev_time) / 1000.0;
 
-
-  // printf("%s ", dev->name);
   int rc = sensor_sample_fetch(dev);
-  // printf("Done\n");
 
-  if (rc) return 1;
   if (rc == 0)
     rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
   if (rc == 0)
     rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
-  // rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
-  // rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
 
   IMU->prev_time = current_time;
   IMU->accel[0] = sensor_value_to_double(&accel[0]);
@@ -99,7 +93,8 @@ int process_mpu6050(const struct device *dev, struct joint *IMU) {
   IMU->gyro[1] = sensor_value_to_double(&gyro[1]) - IMU->gyro_offset[1];
   IMU->gyro[2] = sensor_value_to_double(&gyro[2]) - IMU->gyro_offset[2];
 
-  // printk("%03.3f %03.3f %03.3f | %03.3f %03.3f %03.3f\n", IMU->accel[0], IMU->accel[1], IMU->accel[2], IMU->gyro[0], IMU->gyro[1], IMU->gyro[2]);
+  // printk("%03.3f %03.3f %03.3f | %03.3f %03.3f %03.3f\n", IMU->accel[0],
+  // IMU->accel[1], IMU->accel[2], IMU->gyro[0], IMU->gyro[1], IMU->gyro[2]);
   if (rc == 0) {
 
     double pitch_acc = (atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) +
@@ -116,8 +111,14 @@ int process_mpu6050(const struct device *dev, struct joint *IMU) {
   }
   return 0;
 }
-enum StepperDirection update_proportional(float target_angel, float current_angel) {
-  float error = fabs(target_angel - current_angel);
+/* proportional feedback update for stepper motor
+ * param:
+ * target_angel - angle of target position to reach
+ * current_angel - angel of current position
+ * returns: dir to move stepper */
+enum StepperDirection update_proportional(double target_angel,
+                                          double current_angel) {
+  double error = fabs(target_angel - current_angel);
   if (error <= 0.1)
     return STOP_PULSE;
   // float diff = target_angel - current_angel;
@@ -125,4 +126,21 @@ enum StepperDirection update_proportional(float target_angel, float current_ange
     return HIGH_PULSE;
   else // target_angel<current_angel
     return LOW_PULSE;
+}
+/* process magnetometer data
+ * param:
+ * dev - magnetometer device
+ * MAG - pointer to struct joint
+ * returns: 0 if successfull to fetch data*/
+int process_bmm150(const struct device *dev, struct joint *MAG) {
+
+  struct sensor_value mag[3];
+  int rc = sensor_sample_fetch(dev);
+  if (rc == 0)
+    rc = sensor_channel_get(dev, SENSOR_CHAN_MAGN_XYZ, mag);
+  else {
+    printk("sample fetch/get failed: %d\n", rc);
+    return 1;
+  }
+  return 0;
 }

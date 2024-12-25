@@ -13,6 +13,7 @@ enum StepperDirection {
 struct joint {
   double accel[3];
   double gyro[3];
+  double mag[3];
   double pitch;
   double roll;
   uint64_t prev_time;
@@ -35,4 +36,7 @@ int process_mpu6050(const struct device *dev, struct joint *IMU);
 
 int calibration(const struct device *dev, struct joint *IMU);
 
-enum StepperDirection update_proportional(float target_angle, float current_angel);
+enum StepperDirection update_proportional(double target_angle,
+                                          double current_angel);
+
+int process_bmm150(const struct device *dev, struct joint *MAG);
