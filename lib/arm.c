@@ -128,8 +128,9 @@ enum StepperDirection update_proportional(double target_angel,
 }
 /* magwick filter to compute yaw
  * param:
- * dev - magnetometer device
- * MAG - pointer to struct joint
+ * mm_dev - magnetometer device
+ * imu_dev - imu device
+ * data - pointer to struct joint
  * returns: 0 if successfull*/
 int process_yaw(const struct device *mm_dev, const struct device *imu_dev,
                 struct joint *data) {
