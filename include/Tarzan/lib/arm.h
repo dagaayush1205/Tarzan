@@ -32,11 +32,12 @@ struct inverse_msg {
 };
 int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos);
 
-int process_mpu6050(const struct device *dev, struct joint *IMU);
+int process_pitch_roll(const struct device *dev, struct joint *IMU);
 
 int calibration(const struct device *dev, struct joint *IMU);
 
 enum StepperDirection update_proportional(double target_angle,
                                           double current_angel);
 
-int process_bmm150(const struct device *dev, struct joint *MAG);
+int process_yaw(const struct device *mm_dev, const struct device *imu_dev,
+                struct joint *data);

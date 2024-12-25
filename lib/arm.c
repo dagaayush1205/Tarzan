@@ -39,7 +39,6 @@ int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos) {
  * dev: imu device
  * IMU: struct joint
  * returns: 0 if calibration succesfull*/
-
 int calibration(const struct device *dev, struct joint *IMU) {
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
@@ -64,12 +63,12 @@ int calibration(const struct device *dev, struct joint *IMU) {
   return 0;
 }
 
-/* process imu data and compute roll and pitch angle
+/* complementary filter to compute pitch & roll
  * param:
  * dev: imu device
  * IMU: struct joint
  * returns: 0 if succesfull*/
-int process_mpu6050(const struct device *dev, struct joint *IMU) {
+int process_pitch_roll(const struct device *dev, struct joint *IMU) {
 
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
@@ -95,6 +94,7 @@ int process_mpu6050(const struct device *dev, struct joint *IMU) {
 
   // printk("%03.3f %03.3f %03.3f | %03.3f %03.3f %03.3f\n", IMU->accel[0],
   // IMU->accel[1], IMU->accel[2], IMU->gyro[0], IMU->gyro[1], IMU->gyro[2]);
+
   if (rc == 0) {
 
     double pitch_acc = (atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) +
@@ -106,7 +106,6 @@ int process_mpu6050(const struct device *dev, struct joint *IMU) {
     IMU->roll =
         TAU * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - TAU) * roll_acc;
   } else {
-    printk("sample fetch/get failed: %d\n", rc);
     return 1;
   }
   return 0;
@@ -127,20 +126,29 @@ enum StepperDirection update_proportional(double target_angel,
   else // target_angel<current_angel
     return LOW_PULSE;
 }
-/* process magnetometer data
+/* magwick filter to compute yaw
  * param:
  * dev - magnetometer device
  * MAG - pointer to struct joint
- * returns: 0 if successfull to fetch data*/
-int process_bmm150(const struct device *dev, struct joint *MAG) {
+ * returns: 0 if successfull*/
+int process_yaw(const struct device *mm_dev, const struct device *imu_dev,
+                struct joint *data) {
 
-  struct sensor_value mag[3];
-  int rc = sensor_sample_fetch(dev);
-  if (rc == 0)
-    rc = sensor_channel_get(dev, SENSOR_CHAN_MAGN_XYZ, mag);
+  struct sensor_value accel[3], gyro[3], mag[3];
+
+  int mm_rc = sensor_sample_fetch(mm_dev);
+  int imu_rc = sensor_sample_fetch(imu_dev);
+
+  if (imu_rc == 0)
+    imu_rc = sensor_channel_get(imu_dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+  if (imu_rc == 0)
+    imu_rc = sensor_channel_get(imu_dev, SENSOR_CHAN_GYRO_XYZ, gyro);
+  if (mm_rc == 0)
+    mm_rc = sensor_channel_get(mm_dev, SENSOR_CHAN_MAGN_XYZ, mag);
+
   else {
-    printk("sample fetch/get failed: %d\n", rc);
     return 1;
   }
+
   return 0;
 }

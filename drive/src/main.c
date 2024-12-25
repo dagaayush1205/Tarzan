@@ -304,19 +304,17 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   struct arm_arg *arm_info =
       CONTAINER_OF(imu_work_ptr, struct arm_arg, imu_work_item);
-  /* fetch imu data */
-  if (process_mpu6050(imu_lower_joint, &(arm_info->lowerIMU)) == 1)
+  /* cpmpute pitch and roll from imu data */
+  if (process_pitch_roll(imu_lower_joint, &(arm_info->lowerIMU)) == 1)
     printk("No data from imu_lower_joint: %s\n", imu_lower_joint->name);
-  if (process_mpu6050(imu_upper_joint, &(arm_info->upperIMU)) == 1)
+  if (process_pitch_roll(imu_upper_joint, &(arm_info->upperIMU)) == 1)
     printk("No data from imu_upper_joint: %s\n", imu_upper_joint->name);
-  if (process_mpu6050(imu_pitch_roll, &(arm_info->endIMU)) == 1)
+  if (process_pitch_roll(imu_pitch_roll, &(arm_info->endIMU)) == 1)
     printk("No data from imu_pitch_roll: %s\n", imu_pitch_roll->name);
 
-  /* fetch magnemtometer data */
-  if (process_bmm150(mm_turn_table, &(arm_info->baseLink)) == 1)
+  /* compute yaw from magnemtometer and imu data */
+  if (process_yaw(mm_turn_table, imu_turn_table, &(arm_info->baseLink)) == 1)
     printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
-  if (process_bmm150(mm_rover, &(arm_info->rover)) == 1)
-    printk("No data from mm_rover: %s\n", mm_rover->name);
 
   // printk("IMU: %03.3f %03.3f %03.3f | Target: %03.3f %03.3f",
   //        (180 * arm.lowerIMU.pitch) / M_PI, (180 * arm.upperIMU.pitch) /
