@@ -1,3 +1,4 @@
+#include "stm32h7xx_ll_usb.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,9 +25,11 @@
 #define STEPPER_TIMER 100 // stepper pulse width in microseconds
 
 /* sbus uart */
-static const struct device *const sbus_uart = DEVICE_DT_GET(DT_ALIAS(sbus_uart));
+static const struct device *const sbus_uart =
+    DEVICE_DT_GET(DT_ALIAS(sbus_uart));
 /* latte panda uart */
-static const struct device *const latte_panda_uart = DEVICE_DT_GET(DT_ALIAS(latte_panda_uart));
+static const struct device *const latte_panda_uart =
+    DEVICE_DT_GET(DT_ALIAS(latte_panda_uart));
 
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id)                                            \
@@ -47,14 +50,19 @@ const struct stepper_motor stepper[5] = {
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor4), step_gpios)},
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), dir_gpios),
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), step_gpios)}};
-/*DT spec for IMU */
-const struct device* imu_lower_joint = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
-const struct device* imu_upper_joint = DEVICE_DT_GET(DT_ALIAS(imu_pitch_roll));
-const struct device* imu_pitch_roll = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
+/*DT spec for I2C devices */
+const struct device *imu_turn_table = DEVICE_DT_GET(DT_ALIAS(imu_turn_table));
+const struct device *imu_lower_joint = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
+const struct device *imu_upper_joint = DEVICE_DT_GET(DT_ALIAS(imu_pitch_roll));
+const struct device *imu_pitch_roll = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
+const struct device *mm_turn_table = DEVICE_DT_GET(DT_ALIAS(mm_turn_table));
+const struct device *mm_rover = DEVICE_DT_GET(DT_ALIAS(mm_rover));
+
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* defining cobs message queue */
 K_MSGQ_DEFINE(msgq_rx, sizeof(struct inverse_msg) + 2, 50, 1);
+
 /* workq dedicated thread */
 K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
 /* semaphore for channels */
@@ -80,9 +88,11 @@ struct arm_arg {
   enum StepperDirection dir[5];
   int pos[5];
   struct k_work imu_work_item;
+  struct joint baseLink;
   struct joint lowerIMU;
   struct joint upperIMU;
   struct joint endIMU;
+  struct joint rover;
 } arm;
 /* struct for communication with latte panda*/
 struct com_arg {
@@ -185,17 +195,17 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
   cobs_decode_result result = cobs_decode(
       (void *)&(com_info->msg_rx), sizeof(com_info->msg_rx), buf, MSG_LEN - 1);
   if (result.status != COBS_DECODE_OK) {
-    printk("Error: COBS Decode Failed %d\n", result.status);
+    printk("COBS Decode Failed %d\n", result.status);
     return;
   }
 }
+
 void cobs_tx_work_handler(struct k_work *cobs_tx_work_ptr) {
   struct com_arg *com_info =
       CONTAINER_OF(cobs_tx_work_ptr, struct com_arg, cobs_tx_work_item);
-  //k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 
   com_info->msg_tx.turn_table = 0;
-  com_info->msg_tx.first_link = -1*arm.lowerIMU.pitch;
+  com_info->msg_tx.first_link = -1 * arm.lowerIMU.pitch;
   com_info->msg_tx.second_link = arm.upperIMU.pitch;
   com_info->msg_tx.pitch = arm.endIMU.pitch;
   com_info->msg_tx.roll = 0;
@@ -207,7 +217,7 @@ void cobs_tx_work_handler(struct k_work *cobs_tx_work_ptr) {
       tx_buf, MSG_LEN, (void *)&com_info->msg_tx, sizeof(struct inverse_msg));
 
   if (result.status != COBS_ENCODE_OK) {
-    printk("Error: COBS Encoded Failed %d\n", result.status);
+    printk("COBS Encoded Failed %d\n", result.status);
     return;
   }
   tx_buf[MSG_LEN - 1] = 0x00;
@@ -215,6 +225,7 @@ void cobs_tx_work_handler(struct k_work *cobs_tx_work_ptr) {
     uart_poll_out(latte_panda_uart, tx_buf[i]);
   }
 }
+
 int velocity_callback(const float *velocity_buffer, int buffer_len,
                       int wheels_per_side) {
   if (buffer_len < wheels_per_side * 2) {
@@ -293,20 +304,37 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   struct arm_arg *arm_info =
       CONTAINER_OF(imu_work_ptr, struct arm_arg, imu_work_item);
-  if (process_mpu6050(imu_lower_joint, &(arm_info->lowerIMU)) == 1) printk("No data from imu_lower_joint: %s\n", imu_lower_joint->name);
-  if (process_mpu6050(imu_upper_joint, &(arm_info->upperIMU)) == 1) printk("No data from imu_upper_joint: %s\n", imu_upper_joint->name);
-  // if (process_mpu6050(imu_pitch_roll, &(arm_info->endIMU)) == 1) printk("No data from imu_pitch_roll: %s\n", imu_pitch_roll->name);
+  /* fetch imu data */
+  if (process_mpu6050(imu_lower_joint, &(arm_info->lowerIMU)) == 1)
+    printk("No data from imu_lower_joint: %s\n", imu_lower_joint->name);
+  if (process_mpu6050(imu_upper_joint, &(arm_info->upperIMU)) == 1)
+    printk("No data from imu_upper_joint: %s\n", imu_upper_joint->name);
+  if (process_mpu6050(imu_pitch_roll, &(arm_info->endIMU)) == 1)
+    printk("No data from imu_pitch_roll: %s\n", imu_pitch_roll->name);
 
-  printk("IMU: %03.3f %03.3f %03.3f | Target: %03.3f %03.3f",
-         (180*arm.lowerIMU.pitch)/M_PI, (180*arm.upperIMU.pitch)/M_PI,
-         (180*arm.endIMU.pitch)/M_PI,
-         (180*com.msg_rx.first_link)/M_PI, (180*(com.msg_rx.second_link-com.msg_rx.first_link))/M_PI);
-  arm.dir[0] = update_proportional(com.msg_rx.turn_table, 0); // arm.baseIMU.yaw;
-  arm.dir[1] = update_proportional(com.msg_rx.first_link, -1*arm.lowerIMU.pitch);
-  arm.dir[2] = update_proportional((com.msg_rx.second_link)-(com.msg_rx.first_link), arm.upperIMU.pitch);
+  /* fetch magnemtometer data */
+  if (process_bmm150(mm_turn_table, &(arm_info->baseLink)) == 1)
+    printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
+  if (process_bmm150(mm_rover, &(arm_info->rover)) == 1)
+    printk("No data from mm_rover: %s\n", mm_rover->name);
+
+  // printk("IMU: %03.3f %03.3f %03.3f | Target: %03.3f %03.3f",
+  //        (180 * arm.lowerIMU.pitch) / M_PI, (180 * arm.upperIMU.pitch) /
+  //        M_PI, (180 * arm.endIMU.pitch) / M_PI, (180 * com.msg_rx.first_link)
+  //        / M_PI, (180 * (com.msg_rx.second_link - com.msg_rx.first_link)) /
+  //        M_PI);
+
+  arm.dir[0] = update_proportional(com.msg_rx.turn_table, 0);
+  arm.dir[1] =
+      update_proportional(com.msg_rx.first_link, -1 * arm.lowerIMU.pitch);
+  arm.dir[2] = update_proportional(
+      (com.msg_rx.second_link) - (com.msg_rx.first_link), arm.upperIMU.pitch);
   arm.dir[3] = update_proportional((com.msg_rx.pitch), arm.endIMU.pitch);
   arm.dir[4] = update_proportional(com.msg_rx.roll, arm.endIMU.roll);
-  printk(" | Move: %d%d %d%d\n", arm.dir[1] >> 1 , arm.dir[1] & 0b01, arm.dir[2] >> 1, arm.dir[2] & 0b01);
+
+  // printk(" | Move: %d%d %d%d\n", arm.dir[1] >> 1, arm.dir[1] & 0b01,
+  //        arm.dir[2] >> 1, arm.dir[2] & 0b01);
+
   k_work_submit_to_queue(&work_q, &(com.cobs_tx_work_item));
 }
 
@@ -314,14 +342,14 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
 void arm_stepper_work_handler(enum StepperDirection *dir) {
   for (int i = 0; i < 5; i++) {
     switch (dir[i]) {
-      case STOP_PULSE:
-        continue;
-      case LOW_PULSE:
-        arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
-        continue;
-      case HIGH_PULSE:
-        arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
-        continue;
+    case STOP_PULSE:
+      continue;
+    case LOW_PULSE:
+      arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
+      continue;
+    case HIGH_PULSE:
+      arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
+      continue;
     }
   }
 }
@@ -464,24 +492,28 @@ int main() {
   /* configure stepper gpio for output */
   for (size_t i = 0U; i < 5; i++) {
     if (gpio_pin_configure_dt(&(stepper[i].dir), GPIO_OUTPUT_INACTIVE)) {
-      printk("Error: Stepper motor %d: Dir %d not configured", i,
-             stepper[i].dir.pin);
+      printk("Stepper motor %d: Dir %d not configured", i, stepper[i].dir.pin);
     }
     if (gpio_pin_configure_dt(&(stepper[i].step), GPIO_OUTPUT_INACTIVE)) {
-      printk("Error: Stepper motor %d: Dir %d not configured", i,
-             stepper[i].step.pin);
+      printk("Stepper motor %d: Dir %d not configured", i, stepper[i].step.pin);
     }
   }
-  /* IMU ready checks */
+  /* I2C devices ready checks */
+  if (!device_is_ready(imu_turn_table))
+    printk("Lower joint IMU %s: Not ready\n", imu_turn_table->name);
   if (!device_is_ready(imu_lower_joint))
     printk("Lower joint IMU %s: Not ready\n", imu_lower_joint->name);
   if (!device_is_ready(imu_upper_joint))
     printk("Upper joint IMU %s: Not ready\n", imu_upper_joint->name);
   if (!device_is_ready(imu_pitch_roll))
     printk("Pitch Roll IMU %s: Not ready\n", imu_pitch_roll->name);
+  if (!device_is_ready(mm_turn_table))
+    printk("Pitch Roll IMU %s: Not ready\n", mm_turn_table->name);
+  if (!device_is_ready(mm_rover))
+    printk("Pitch Roll IMU %s: Not ready\n", mm_rover->name);
 
-  printk("Calibrating IMUs\n");
   /* Calibrating IMUs */
+  printk("Calibrating IMUs\n");
   if (calibration(imu_lower_joint, &arm.lowerIMU)) {
     printk("Lower joint IMU %s: Calibration failed\n", imu_lower_joint->name);
     return 0;
