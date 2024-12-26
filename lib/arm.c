@@ -118,3 +118,110 @@ int update_proportional(float target_angel, float current_angel) {
       return LOW_PULSE;
   }
 }
+
+struct quaternion q_est = {1 , 0 , 0 , 0};
+struct quaternion quat_mult(struct quaternion L , struct  quaternion R)
+{
+  struct quaternion product;
+  product.q1 = (L.q1 * R.q1) - (L.q2 * R.q2) - (L.q3 * R.q3) - (L.q4 * R.q4);
+  product.q2 = (L.q1 * R.q2) + (L.q2 * R.q1) + (L.q3 * R.q4) - (L.q4 * R.q3);
+  product.q3 = (L.q1 * R.q3) - (L.q2 * R.q4) + (L.q3 * R.q1) + (L.q4 * R.q2);
+  product.q4 = (L.q1 * R.q4) + (L.q2 * R.q3) - (L.q3 * R.q2) + (L.q4 * R.q1);
+
+  return product;
+}
+void imu_filter(float ax , float ay , float az , float gx , float gy , float gz , float mx , float my , float mz){
+  struct quaternion q_est_prev = q_est;
+  struct quaternion q_est_dot = {0};
+  struct quaternion q_a = {0 , ax , ay , az};
+  struct quaternion q_m = {0 , mx , my , mz};
+  float F_g[3] = {0};
+  float J_g[3][4] = {0};
+  float F_m[3] = {0};
+  float J_m[3][4] = {0};
+  struct quaternion gradient = {0};
+  struct quaternion q_w;
+  q_w.q1 = 0;
+  q_w.q2 = gx;
+  q_w.q3 = gy;
+  q_w.q4 = gz;
+  
+  quat_scaler(&q_w , 0.5);
+  q_w = quat_mult(q_est_prev , q_w);
+// normalise data
+ quat_Normalization(&q_a);
+ quat_Normalization(&q_m);
+
+  // function for gravity
+ F_g[0] = 2 * (q_est_prev.q2 * q_est_prev.q4 - q_est_prev.q1 * q_est_prev.q3) - q_a.q2;
+ F_g[1] = 2 * (q_est_prev.q1 * q_est_prev.q2 + q_est_prev.q3 * q_est_prev.q4) - q_a.q3;
+ F_g[2] = 2 * (0.5 - q_est_prev.q2 * q_est_prev.q2 - q_est_prev.q3 * q_est_prev.q3) - q_a.q4;
+
+// function for magnetometer
+ F_m[0] = 2 * (q_est_prev.q2 * q_est_prev.q4 - q_est_prev.q1 * q_est_prev.q3) - q_m.q2;
+ F_m[1] = 2 * (q_est_prev.q1 * q_est_prev.q2 + q_est_prev.q3 * q_est_prev.q4) - q_m.q3;
+ F_m[2] = 2 * (0.5 - q_est_prev.q2 * q_est_prev.q2 - q_est_prev.q3 * q_est_prev.q3) - q_m.q4;
+
+// jacobian for gravity
+ J_g[0][0] = -2 * q_est_prev.q3;
+ J_g[0][1] =  2 * q_est_prev.q4;
+ J_g[0][2] = -2 * q_est_prev.q1;
+ J_g[0][3] =  2 * q_est_prev.q2;
+    
+ J_g[1][0] = 2 * q_est_prev.q2;
+ J_g[1][1] = 2 * q_est_prev.q1;
+ J_g[1][2] = 2 * q_est_prev.q4;
+ J_g[1][3] = 2 * q_est_prev.q3;
+    
+ J_g[2][0] = 0;
+ J_g[2][1] = -4 * q_est_prev.q2;
+ J_g[2][2] = -4 * q_est_prev.q3;
+ J_g[2][3] = 0;
+
+
+  // jacobian for magnetometer
+ J_m[0][0] = -2 * q_est_prev.q3;
+ J_m[0][1] =  2 * q_est_prev.q4;
+ J_m[0][2] = -2 * q_est_prev.q1;
+ J_m[0][3] =  2 * q_est_prev.q2;
+    
+ J_m[1][0] = 2 * q_est_prev.q2;
+ J_m[1][1] = 2 * q_est_prev.q1;
+ J_m[1][2] = 2 * q_est_prev.q4;
+ J_m[1][3] = 2 * q_est_prev.q3;
+    
+ J_m[2][0] = 0;
+ J_m[2][1] = -4 * q_est_prev.q2;
+ J_m[2][2] = -4 * q_est_prev.q3;
+ J_m[2][3] = 0;
+
+
+  // gradient
+ gradient.q1 = J_g[0][0] * F_g[0] + J_g[1][0] * F_g[1] + J_g[2][0] * F_g[2] + J_m[0][0] * F_m[0] + J_m[1][0] * F_m[1] + J_m[2][0] * F_m[2];
+ gradient.q2 = J_g[0][1] * F_g[0] + J_g[1][1] * F_g[1] + J_g[2][1] * F_g[2] + J_m[0][1] * F_m[0] + J_m[1][1] * F_m[1] + J_m[2][1] * F_m[2];
+ gradient.q3 = J_g[0][2] * F_g[0] + J_g[1][2] * F_g[1] + J_g[2][2] * F_g[2] + J_m[0][2] * F_m[0] + J_m[1][2] * F_m[1] + J_m[2][2] * F_m[2];
+ gradient.q4 = J_g[0][3] * F_g[0] + J_g[1][3] * F_g[1] + J_g[2][3] * F_g[2] + J_m[0][3] * F_m[0] + J_m[1][3] * F_m[1] + J_m[2][3] * F_m[2];
+
+ quat_Normalization(&gradient);
+// intergrating the gyro data
+ quat_scalar(&q_w, 0.5); q_w = quat_mult(q_est_prev, q_w);
+
+  //update  
+ quat_scalar(&gradient, BETA);
+ quat_sub(&q_est_dot, q_w, gradient);
+ quat_scalar(&q_est_dot, DELTA_T);
+ quat_add(&q_est, q_est_prev, q_est_dot);
+ quat_Normalization(&q_est);
+}
+// we should move this to process imu 
+void eulerAngles(struct quaternion q, float* roll, float* pitch, float* yaw){
+    
+    *yaw = atan2f((2*q.q2*q.q3 - 2*q.q1*q.q4), (2*q.q1*q.q1 + 2*q.q2*q.q2 -1));  // equation (7)
+    *pitch = -asinf(2*q.q2*q.q4 + 2*q.q1*q.q3);                                  // equatino (8)
+    *roll  = atan2f((2*q.q3*q.q4 - 2*q.q1*q.q2), (2*q.q1*q.q1 + 2*q.q4*q.q4 -1));
+    
+    *yaw *= (180.0 / M_PI);
+    *pitch *= (180.0 / M_PI);
+    *roll *= (180.0 / M_PI);
+
+}
