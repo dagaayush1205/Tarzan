@@ -46,7 +46,7 @@ int update_proportional(float target_angle, float current_angel);
 
 struct quaternion quat_mult (struct quaternion q_L, struct quaternion q_R);struct quaternion quat_mult (struct quaternion q_L, struct quaternion q_R);
 
-static inline void quat_scaler(struct quaternion * q, float scalar){
+static inline void quat_scalar(struct quaternion * q, float scalar){
     q -> q1 *= scalar;
     q -> q2 *= scalar;
     q -> q3 *= scalar;

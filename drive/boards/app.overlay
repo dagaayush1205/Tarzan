@@ -69,7 +69,7 @@
 	
 		stepper_motor_3: motor_3 { 
 			label = "Second Link";
-			dir-gpios = <&gpiog 14 GPIO_ACTIVE_LOW>; 
+			dir-gpios = <&gpiog 14 GPIO_ACTIVE_HIGH>; 
 			step-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>; 
 		};
 		stepper_motor_4: motor_4 { 
@@ -102,7 +102,8 @@
 			imu-lower-joint = &lj_imu; 
 			imu-upper-joint = &uj_imu;
 			imu-pitch-roll = &pr_imu;
-			imu-turn-table = &tt_imu; 
+			imu-turn-table = &tt_imu;
+			mm-turn-table = &tt_mm; 
 			mm-rover = &rover_mm; 
 			limit-switch = &switch1;
 	};
@@ -198,6 +199,11 @@
 		reg = <0x69>;
 		status = "okay"; 
 	};
+	tt_mm: bmm150@13 { 
+		compatible = "bosch,bmm150";
+		reg = <0x13>;
+		status = "okay";
+	};
 };
 
 &i2c4 {
@@ -220,9 +226,8 @@
 		reg = <0x13>;
 		status = "okay";
 	};
-  i2c-dump-allowlist {
-        compatible = "zephyr,i2c-dump-allowlist";
-        devices = < &rover_mm >;
-        
-    };
+ 	i2c-dump-allowlist {
+ 	       compatible = "zephyr,i2c-dump-allowlist";
+ 	       devices = <&rover_mm>;       
+ 	};
 };

@@ -18,9 +18,20 @@ static const struct device *const uart_dev =
 static const struct device *const uart_debug =
     DEVICE_DT_GET(DT_ALIAS(debug_uart)); // debugger
 
-const struct device *const base = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
+const struct device* imu_lower_joint = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
+const struct device* imu_upper_joint = DEVICE_DT_GET(DT_ALIAS(imu_pitch_roll));
+const struct device* imu_pitch_roll = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
 # define M_PI  3.14159265358979323846
 
+struct arm_arg {
+  // uint16_t direction[5];
+  int dir[5];
+  int pos[5];
+  struct k_work imu_work_item;
+  struct joint lowerIMU;
+  struct joint upperIMU;
+  struct joint endIMU;
+} arm;
  float accel_offset [3] = {-0.1, 0.04, -0.59}, gyro_offset[3] = {0.016, -0.055, 0.005};
 float angle = 0, k = 0.89; // k here is tau
 float target_angle = -50;
@@ -101,9 +112,9 @@ static int _process_mpu6050(const struct device *dev, int n) {
   a[2] = sensor_value_to_double(&accel[2]);
   g[0] = sensor_value_to_double(&gyro[0]) - gyro_offset[0];
   g[1] = sensor_value_to_double(&gyro[1]) - gyro_offset[1];
-  g[3] = sensor_value_to_double(&gyro[2]) - gyro_offset[2];
+  g[2] = sensor_value_to_double(&gyro[2]) - gyro_offset[2];
 
-   // printk("%d accel % .1f % .1f % .1f m/s/s\t gyro % .1f % .1f % .1f rad/s\n", n, a[0], a[1], a[2], g[0], g[1], g[2]);
+   printk("%d accel % .1f % .1f % .1f m/s/s\t gyro % .1f % .1f % .1f rad/s\n", n, a[0], a[1], a[2], g[0], g[1], g[2]);
   
   if (rc != 0) printk("Sample get/failed\n");
     float pitch_acc = (180 * atan2(-1 * a[0], sqrt(pow(a[1], 2) + pow(a[2], 2))) /M_PI);
@@ -174,12 +185,28 @@ int main() {
 
   printk("This is tarzan version %s\nFile: %s\n", GIT_BRANCH_NAME, __FILE__);
   int err;
-  if (!device_is_ready(base)) {
-    printk("Device %s is not ready\n", base->name);
+  if (!device_is_ready(imu_lower_joint))
+    printk("Lower joint IMU %s: Not ready\n", imu_lower_joint->name);
+  if (!device_is_ready(imu_upper_joint))
+    printk("Upper joint IMU %s: Not ready\n", imu_upper_joint->name);
+  if (!device_is_ready(imu_pitch_roll))
+    printk("Pitch Roll IMU %s: Not ready\n", imu_pitch_roll->name);
+
+  printk("Calibrating...\n");
+
+  if (calibration(imu_lower_joint, &arm.lowerIMU)) {
+    printk("Lower joint IMU %s: Calibration failed\n", imu_lower_joint->name);
     return 0;
   }
-  printk("Calibrating...\n");
-  _calibration(base); 
+  if (calibration(imu_upper_joint, &arm.upperIMU)) {
+    printk("Upper joint IMU %s: Calibration failed\n", imu_upper_joint->name);
+    return 0;
+  }
+  if (calibration(imu_pitch_roll, &arm.endIMU)) {
+    printk("Pitch Roll IMU %s: Calibration failed\n", imu_pitch_roll->name);
+    return 0;
+  }
+  printk("\nInitialization completed successfully!\n");
 
   for (size_t i = 0U; i < 3; i++) {
     if (!gpio_is_ready_dt(&stepper[i].dir)) {
@@ -208,7 +235,11 @@ int main() {
   printk("Initialization completed successfully!\n");
   k_timer_start(&my_timer, K_USEC(120), K_USEC(50));
   while(true){
-    _process_mpu6050(base, 3);
+    if (process_mpu6050(imu_lower_joint, &(arm.lowerIMU)) == 1) printk("No data from imu_lower_joint: %s\n", imu_lower_joint->name);
+    if (process_mpu6050(imu_upper_joint, &(arm.upperIMU)) == 1) printk("No data from imu_upper_joint: %s\n", imu_upper_joint->name);
+  printk("IMU: %03.3f %03.3f %03.3f\n",
+         (180*arm.lowerIMU.pitch)/M_PI, (180*arm.upperIMU.pitch)/M_PI,
+         (180*arm.endIMU.pitch)/M_PI);
     k_sleep(K_MSEC(100));
   }
 }
