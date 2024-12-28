@@ -49,6 +49,9 @@ int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos);
 
 int process_pitch_roll(const struct device *dev, struct joint *IMU);
 
+int process_yaw(const struct device *mm_dev, const struct device *imu_dev,
+                struct joint *data);
+
 int calibration(const struct device *dev, struct joint *IMU);
 
 enum StepperDirection update_proportional(double target_angle,
