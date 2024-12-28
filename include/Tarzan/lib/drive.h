@@ -1,5 +1,7 @@
 #include <stdint.h>
 
+enum msg_type { AUTONOMOUS, INVERSE };
+
 float sbus_velocity_interpolation(uint16_t channel, float *velocity_range,
                                   uint16_t *channel_range);
 
