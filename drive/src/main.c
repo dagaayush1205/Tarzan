@@ -66,6 +66,9 @@ struct all_msg {
   enum msg_type type;
 };
 
+/* decleration of check_crc func*/
+int check_crc(struct all_msg *);
+
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* defining cobs message queue */
@@ -85,7 +88,8 @@ struct k_work_q work_q;
 struct k_work sbus_work_item;
 /* struct for drive variables */
 struct drive_arg {
-  struct k_work drive_work_item; // drive work item
+  struct k_work drive_work_item;      // drive work item
+  struct k_work auto_drive_work_item; // autonomous drive work item
   struct DiffDriveConfig drive_config;
   struct DiffDriveTwist cmd;
   struct DiffDrive *drive_init;
@@ -164,7 +168,6 @@ void cobs_cb(const struct device *dev, void *user_data) {
       }
       k_msgq_put(&msgq_rx, rx_buf, K_NO_WAIT);
       k_work_submit_to_queue(&work_q, &com.cobs_rx_work_item);
-      // k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
       cobs_bytes_read = 0;
     } else if (cobs_bytes_read < sizeof(rx_buf)) {
       rx_buf[cobs_bytes_read++] = c;
@@ -209,6 +212,9 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
   if (check_crc(&com_info->msg_rx) != 0) {
     printk("Message from Latte Panda is corrupt");
     return;
+  }
+  if (com_info->msg_rx.type == AUTONOMOUS) {
+    k_work_submit_to_queue(&work_q, &(drive.auto_drive_work_item));
   }
 }
 
@@ -285,6 +291,16 @@ int feedback_callback(float *feedback_buffer, int buffer_len,
 void drive_work_handler(struct k_work *drive_work_ptr) {
   struct drive_arg *drive_info =
       CONTAINER_OF(drive_work_ptr, struct drive_arg, drive_work_item);
+  uint64_t drive_timestamp;
+
+  if (com.msg_rx.type == AUTONOMOUS) {
+    drive_timestamp = k_uptime_get();
+    drive_info->cmd.angular_z = com.msg_rx.auto_cmd.angular_z;
+    drive_info->cmd.linear_x = com.msg_rx.auto_cmd.linear_x;
+    diffdrive_update(drive_info->drive_init, drive_info->cmd,
+                     drive_info->time_last_drive_update);
+    drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
+  }
   if (k_mutex_lock(&ch_writer_mutex, K_NO_WAIT) != 0) {
     return;
   }
@@ -297,7 +313,7 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   k_mutex_unlock(&ch_reader_cnt_mutex);
 
   // drive motor write
-  uint64_t drive_timestamp = k_uptime_get();
+  drive_timestamp = k_uptime_get();
   drive_info->cmd.angular_z = sbus_velocity_interpolation(
       channel[0], angular_velocity_range, channel_range);
   drive_info->cmd.linear_x = sbus_velocity_interpolation(
@@ -328,6 +344,18 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
     k_sem_give(&ch_sem);
   }
   k_mutex_unlock(&ch_reader_cnt_mutex);
+}
+
+/* autonomous drive work handler */
+void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
+  struct drive_arg *drive_info =
+      CONTAINER_OF(auto_drive_work_ptr, struct drive_arg, auto_drive_work_item);
+  uint64_t drive_timestamp = k_uptime_get();
+  drive_info->cmd.angular_z = com.msg_rx.auto_cmd.angular_z;
+  drive_info->cmd.linear_x = com.msg_rx.auto_cmd.linear_x;
+  diffdrive_update(drive_info->drive_init, drive_info->cmd,
+                   drive_info->time_last_drive_update);
+  drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
 }
 
 /* work handler for processing imu */
@@ -437,6 +465,7 @@ int main() {
   /* initializing work items */
   k_work_init(&sbus_work_item, sbus_work_handler);
   k_work_init(&(drive.drive_work_item), drive_work_handler);
+  k_work_init(&(drive.auto_drive_work_item), auto_drive_work_handler);
   k_work_init(&(arm.imu_work_item), arm_imu_work_handler);
   k_work_init(&(com.cobs_rx_work_item), cobs_rx_work_handler);
   k_work_init(&(com.cobs_tx_work_item), cobs_tx_work_handler);
