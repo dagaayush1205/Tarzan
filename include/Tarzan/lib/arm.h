@@ -22,6 +22,7 @@ extern struct quaternion q_est;
 struct joint {
   double accel[3];
   double gyro[3];
+  double mag[3];
   double pitch;
   double roll;
   uint64_t prev_time;
