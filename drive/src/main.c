@@ -8,6 +8,7 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
+#include <zephyr/sys/crc.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/usb/usb_device.h>
@@ -193,7 +194,7 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
     }
   }
 }
-/* cobs message work handler */
+/* received cobs message work handler */
 void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
   uint8_t buf[MSG_LEN];
   struct com_arg *com_info =
@@ -205,12 +206,19 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
     printk("COBS Decode Failed %d\n", result.status);
     return;
   }
+  if (check_crc(&com_info->msg_rx) != 0) {
+    printk("Message from Latte Panda is corrupt");
+    return;
+  }
 }
 
+/* encode and transmite cobs message */
 void cobs_tx_work_handler(struct k_work *cobs_tx_work_ptr) {
   struct com_arg *com_info =
       CONTAINER_OF(cobs_tx_work_ptr, struct com_arg, cobs_tx_work_item);
 
+  com_info->msg_tx.auto_cmd.linear_x = 0;
+  com_info->msg_tx.auto_cmd.angular_z = 0;
   com_info->msg_tx.inv.turn_table = 0;
   com_info->msg_tx.inv.first_link = -1 * arm.lowerIMU.pitch;
   com_info->msg_tx.inv.second_link = arm.upperIMU.pitch;
@@ -219,6 +227,9 @@ void cobs_tx_work_handler(struct k_work *cobs_tx_work_ptr) {
   com_info->msg_tx.inv.x = 0;
   com_info->msg_tx.inv.y = 0;
   com_info->msg_tx.inv.z = 0;
+  com_info->msg_tx.crc = crc32_ieee((uint8_t *)(&com_info->msg_tx),
+                                    sizeof(struct all_msg) - sizeof(uint32_t));
+  com_info->msg_tx.type = 0;
 
   cobs_encode_result result = cobs_encode(
       tx_buf, MSG_LEN, (void *)&com_info->msg_tx, sizeof(struct all_msg));
@@ -231,6 +242,18 @@ void cobs_tx_work_handler(struct k_work *cobs_tx_work_ptr) {
   for (int i = 0; i < MSG_LEN; i++) {
     uart_poll_out(latte_panda_uart, tx_buf[i]);
   }
+}
+
+/* check if received cobs message is valid,
+ * ret 0 if successfull */
+int check_crc(struct all_msg *msg) {
+  uint32_t valid_crc;
+  valid_crc =
+      crc32_ieee((uint8_t *)msg, sizeof(struct all_msg) - sizeof(uint32_t));
+  if (valid_crc != msg->crc) {
+    return 1;
+  }
+  return 0;
 }
 
 int velocity_callback(const float *velocity_buffer, int buffer_len,
