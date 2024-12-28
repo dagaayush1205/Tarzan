@@ -396,54 +396,61 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
 }
 
 /* work handler for stepper motor write*/
-void arm_stepper_work_handler(enum StepperDirection *dir) {
-  for (int i = 0; i < 5; i++) {
-    switch (dir[i]) {
-    case STOP_PULSE:
-      continue;
-    case LOW_PULSE:
-      arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
-      continue;
-    case HIGH_PULSE:
-      arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
-      continue;
+void arm_stepper_work_handler(enum StepperDirection *dir, enum msg_type type) {
+
+  /* control using inverse */
+  if (type == INVERSE) {
+    for (int i = 0; i < 5; i++) {
+      switch (dir[i]) {
+      case STOP_PULSE:
+        continue;
+      case LOW_PULSE:
+        arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
+        continue;
+      case HIGH_PULSE:
+        arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
+        continue;
+      }
     }
+    return;
   }
+
+  /* contorl using RC */
+  if (k_mutex_lock(&ch_writer_mutex, K_NO_WAIT) != 0) {
+    return;
+  }
+  k_mutex_unlock(&ch_writer_mutex);
+  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
+  if (ch_reader_cnt == 0) {
+    k_sem_take(&ch_sem, K_FOREVER);
+  }
+  ch_reader_cnt++;
+  k_mutex_unlock(&ch_reader_cnt_mutex);
+  arm.dir[0] = channel[4];
+  arm.dir[1] = channel[5];
+  arm.dir[2] = 992; // channel[6];
+  arm.dir[3] = 992; // channel[7]
+  arm.dir[4] = 992; // channel[8];
+  /* writing to stepper motor */
+  for (int i = 0; i < 5; i++) {
+    if (arm.dir[i] > 1000) {
+      arm.pos[i] = Stepper_motor_write(&stepper[i], HIGH_PULSE, arm.pos[i]);
+    } else if (arm.dir[i] < 800)
+      arm.pos[i] = Stepper_motor_write(&stepper[i], LOW_PULSE, arm.pos[i]);
+    else
+      continue;
+  }
+  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
+  ch_reader_cnt--;
+  if (ch_reader_cnt == 0) {
+    k_sem_give(&ch_sem);
+  }
+  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
 }
-// void arm_stepper_work_handler() {
-//   if (k_mutex_lock(&ch_writer_mutex, K_NO_WAIT) != 0) {
-//     return;
-//   }
-//   k_mutex_unlock(&ch_writer_mutex);
-//   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
-//   if (ch_reader_cnt == 0) {
-//     k_sem_take(&ch_sem, K_FOREVER);
-//   }
-//   ch_reader_cnt++;
-//   k_mutex_unlock(&ch_reader_cnt_mutex);
-//   arm.cmd[0] = channel[4];
-//   arm.cmd[1] = channel[5];
-//   arm.cmd[2] = channel[6];
-//   /* writing to stepper motor */
-//   for (int i = 0; i < 3; i++) {
-//     if (arm.cmd[i] > 1000) {
-//       arm.pos[i] = Stepper_motor_write(&stepper[i], HIGH_PULSE, arm.pos[i]);
-//     } else if (arm.cmd[i] < 800)
-//       arm.pos[i] = Stepper_motor_write(&stepper[i], LOW_PULSE, arm.pos[i]);
-//     else
-//       continue;
-//   }
-//   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
-//   ch_reader_cnt--;
-//   if (ch_reader_cnt == 0) {
-//     k_sem_give(&ch_sem);
-//   }
-//   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
-// }
 
 /* timer to write to stepper motors*/
 void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
-  arm_stepper_work_handler(arm.dir);
+  arm_stepper_work_handler(arm.dir, com.msg_rx.type);
   k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 }
 K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
