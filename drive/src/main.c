@@ -57,10 +57,18 @@ const struct device *imu_pitch_roll = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
 const struct device *mm_turn_table = DEVICE_DT_GET(DT_ALIAS(mm_turn_table));
 const struct device *mm_rover = DEVICE_DT_GET(DT_ALIAS(mm_rover));
 
+/* msg for com with latte panda */
+struct all_msg {
+  struct DiffDriveTwist auto_cmd;
+  struct inverse_msg inv;
+  uint32_t crc;
+  enum msg_type type;
+};
+
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* defining cobs message queue */
-K_MSGQ_DEFINE(msgq_rx, sizeof(struct inverse_msg) + 2, 50, 1);
+K_MSGQ_DEFINE(msgq_rx, sizeof(struct all_msg) + 2, 50, 1);
 
 /* workq dedicated thread */
 K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
@@ -97,17 +105,17 @@ struct arm_arg {
 struct com_arg {
   struct k_work cobs_rx_work_item;
   struct k_work cobs_tx_work_item;
-  struct inverse_msg msg_rx; // to store decoded mssg
-  struct inverse_msg msg_tx; // to store encoded mssg
+  struct all_msg msg_rx; // to store decoded mssg
+  struct all_msg msg_tx; // to store encoded mssg
 } com;
 
 int ch_reader_cnt;          // no. of readers accessing channels
 uint16_t channel[16] = {0}; // to store sbus channels
 uint8_t packet[25];         // to store sbus packets
 int sbus_bytes_read;        // to store number of sbus bytes read
-const int MSG_LEN = sizeof(struct inverse_msg) + 2; // len of cobs mssg
-uint8_t rx_buf[sizeof(struct inverse_msg) + 2] = {0};
-uint8_t tx_buf[sizeof(struct inverse_msg) + 2] = {0};
+const int MSG_LEN = sizeof(struct all_msg) + 2; // len of cobs mssg
+uint8_t rx_buf[sizeof(struct all_msg) + 2] = {0};
+uint8_t tx_buf[sizeof(struct all_msg) + 2] = {0};
 int cobs_bytes_read; // to store number of cobs bytes read
 /* range variables */
 float linear_velocity_range[] = {-1.5, 1.5};
@@ -203,17 +211,17 @@ void cobs_tx_work_handler(struct k_work *cobs_tx_work_ptr) {
   struct com_arg *com_info =
       CONTAINER_OF(cobs_tx_work_ptr, struct com_arg, cobs_tx_work_item);
 
-  com_info->msg_tx.turn_table = 0;
-  com_info->msg_tx.first_link = -1 * arm.lowerIMU.pitch;
-  com_info->msg_tx.second_link = arm.upperIMU.pitch;
-  com_info->msg_tx.pitch = arm.endIMU.pitch;
-  com_info->msg_tx.roll = 0;
-  com_info->msg_tx.x = 0;
-  com_info->msg_tx.y = 0;
-  com_info->msg_tx.z = 0;
+  com_info->msg_tx.inv.turn_table = 0;
+  com_info->msg_tx.inv.first_link = -1 * arm.lowerIMU.pitch;
+  com_info->msg_tx.inv.second_link = arm.upperIMU.pitch;
+  com_info->msg_tx.inv.pitch = arm.endIMU.pitch;
+  com_info->msg_tx.inv.roll = 0;
+  com_info->msg_tx.inv.x = 0;
+  com_info->msg_tx.inv.y = 0;
+  com_info->msg_tx.inv.z = 0;
 
   cobs_encode_result result = cobs_encode(
-      tx_buf, MSG_LEN, (void *)&com_info->msg_tx, sizeof(struct inverse_msg));
+      tx_buf, MSG_LEN, (void *)&com_info->msg_tx, sizeof(struct all_msg));
 
   if (result.status != COBS_ENCODE_OK) {
     printk("COBS Encoded Failed %d\n", result.status);
@@ -321,13 +329,14 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   //        / M_PI, (180 * (com.msg_rx.second_link - com.msg_rx.first_link)) /
   //        M_PI);
 
-  arm.dir[0] = update_proportional(com.msg_rx.turn_table, 0);
+  arm.dir[0] = update_proportional(com.msg_rx.inv.turn_table, 0);
   arm.dir[1] =
-      update_proportional(com.msg_rx.first_link, -1 * arm.lowerIMU.pitch);
-  arm.dir[2] = update_proportional(
-      (com.msg_rx.second_link) - (com.msg_rx.first_link), arm.upperIMU.pitch);
-  arm.dir[3] = update_proportional((com.msg_rx.pitch), arm.endIMU.pitch);
-  arm.dir[4] = update_proportional(com.msg_rx.roll, arm.endIMU.roll);
+      update_proportional(com.msg_rx.inv.first_link, -1 * arm.lowerIMU.pitch);
+  arm.dir[2] = update_proportional((com.msg_rx.inv.second_link) -
+                                       (com.msg_rx.inv.first_link),
+                                   arm.upperIMU.pitch);
+  arm.dir[3] = update_proportional((com.msg_rx.inv.pitch), arm.endIMU.pitch);
+  arm.dir[4] = update_proportional(com.msg_rx.inv.roll, arm.endIMU.roll);
 
   // printk(" | Move: %d%d %d%d\n", arm.dir[1] >> 1, arm.dir[1] & 0b01,
   //        arm.dir[2] >> 1, arm.dir[2] & 0b01);
