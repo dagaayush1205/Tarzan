@@ -457,7 +457,7 @@ K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
 
 int main() {
 
-  printk("Tarzan version %s\nFile: %s\n", GIT_BRANCH_NAME, __FILE__);
+  printk("Tarzan version %s\nFile: %s\n", TARZAN_GIT_VERSION, __FILE__);
 
   int err, dtr;
 
