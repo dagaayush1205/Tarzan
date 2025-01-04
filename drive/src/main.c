@@ -100,6 +100,7 @@ struct arm_arg {
   enum StepperDirection dir[5];
   int pos[5];
   struct k_work imu_work_item;
+  struct k_work channel_work_item;
   struct joint baseLink;
   struct joint lowerIMU;
   struct joint upperIMU;
@@ -183,16 +184,16 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
   if (err == 1) {
     printk("Corrupt SBus Packet\n");
   } else {
-    if (k_mutex_lock(&ch_writer_mutex, K_FOREVER) == 0) {
-      if (k_sem_take(&ch_sem, K_NO_WAIT) == 0) {
-        parse_buffer(buffer, channel);
-        k_sem_give(&ch_sem);
-        k_mutex_unlock(&ch_writer_mutex);
-        for (int i = 0; i < 8; i++)
-          printk("%u\t", channel[i]);
-        printk("\n");
-        k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
-      }
+    k_mutex_lock(&ch_writer_mutex, K_FOREVER);
+    if (k_sem_take(&ch_sem, K_NO_WAIT) == 0) {
+      k_mutex_unlock(&ch_writer_mutex);
+      parse_buffer(buffer, channel);
+      k_sem_give(&ch_sem);
+
+      // arm_channel_work_handler(NULL);
+      k_work_submit_to_queue(&work_q, &(arm.channel_work_item));
+      k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
+    } else {
       k_mutex_unlock(&ch_writer_mutex);
     }
   }
@@ -395,27 +396,10 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   k_work_submit_to_queue(&work_q, &(com.cobs_tx_work_item));
 }
 
-/* work handler for stepper motor write*/
-void arm_stepper_work_handler(enum StepperDirection *dir, enum msg_type type) {
+void arm_channel_work_handler(struct k_work* work_ptr) {
+  struct arm_arg *arm_info =
+      CONTAINER_OF(work_ptr, struct arm_arg, channel_work_item);
 
-  /* control using inverse */
-  if (type == INVERSE) {
-    for (int i = 0; i < 5; i++) {
-      switch (dir[i]) {
-      case STOP_PULSE:
-        continue;
-      case LOW_PULSE:
-        arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
-        continue;
-      case HIGH_PULSE:
-        arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
-        continue;
-      }
-    }
-    return;
-  }
-
-  /* contorl using RC */
   if (k_mutex_lock(&ch_writer_mutex, K_NO_WAIT) != 0) {
     return;
   }
@@ -426,32 +410,35 @@ void arm_stepper_work_handler(enum StepperDirection *dir, enum msg_type type) {
   }
   ch_reader_cnt++;
   k_mutex_unlock(&ch_reader_cnt_mutex);
-  arm.dir[0] = channel[4];
-  arm.dir[1] = channel[5];
-  arm.dir[2] = 992; // channel[6];
-  arm.dir[3] = 992; // channel[7]
-  arm.dir[4] = 992; // channel[8];
-  /* writing to stepper motor */
+
+  uint16_t arm_channels[5] = {channel[6], channel[5], channel[4], 992, 992};
   for (int i = 0; i < 5; i++) {
-    if (arm.dir[i] > 1000) {
-      arm.pos[i] = Stepper_motor_write(&stepper[i], HIGH_PULSE, arm.pos[i]);
-    } else if (arm.dir[i] < 800)
-      arm.pos[i] = Stepper_motor_write(&stepper[i], LOW_PULSE, arm.pos[i]);
-    else
-      continue;
+    if (arm_channels[i] > 992) {
+      arm_info->dir[i] = HIGH_PULSE;
+    } else if (arm_channels[i] < 800) {
+      arm_info->dir[i] = LOW_PULSE;
+    } else {
+      arm_info->dir[i] = STOP_PULSE;
+    }
   }
+
   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
   ch_reader_cnt--;
   if (ch_reader_cnt == 0) {
     k_sem_give(&ch_sem);
   }
-  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
+  k_mutex_unlock(&ch_reader_cnt_mutex);
+}
+/* work handler for stepper motor write*/
+void arm_stepper_work_handler(enum StepperDirection *dir, enum msg_type type) {
+    for (int i = 0; i < 5; i++) {
+      arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
+    }
 }
 
 /* timer to write to stepper motors*/
 void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
   arm_stepper_work_handler(arm.dir, com.msg_rx.type);
-  k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 }
 K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
 
@@ -474,6 +461,7 @@ int main() {
   k_work_init(&(drive.drive_work_item), drive_work_handler);
   k_work_init(&(drive.auto_drive_work_item), auto_drive_work_handler);
   k_work_init(&(arm.imu_work_item), arm_imu_work_handler);
+  k_work_init(&(arm.channel_work_item), arm_channel_work_handler);
   k_work_init(&(com.cobs_rx_work_item), cobs_rx_work_handler);
   k_work_init(&(com.cobs_tx_work_item), cobs_tx_work_handler);
   /* initializing drive configs */
