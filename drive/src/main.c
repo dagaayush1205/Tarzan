@@ -58,6 +58,12 @@ const struct device *imu_upper_joint = DEVICE_DT_GET(DT_ALIAS(imu_pitch_roll));
 const struct device *imu_pitch_roll = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
 const struct device *mm_turn_table = DEVICE_DT_GET(DT_ALIAS(mm_turn_table));
 const struct device *mm_rover = DEVICE_DT_GET(DT_ALIAS(mm_rover));
+/* DT spec for leds */
+static const struct gpio_dt_spec init_led =
+    GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+static const struct gpio_dt_spec sbus_status_led =
+    GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
+static const struct device *const error_led = DEVICE_DT_GET(DT_ALIAS(pwm_led0));
 
 /* msg for com with latte panda */
 struct all_msg {
@@ -207,6 +213,7 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
   if (err == 1) {
     printk("Corrupt SBus Packet\n");
   } else {
+    gpio_pin_set_dt(&sbus_status_led, 1); // set sbus status led high
     k_mutex_lock(&ch_writer_mutex, K_FOREVER);
     if (k_sem_take(&ch_sem, K_NO_WAIT) == 0) {
       k_mutex_unlock(&ch_writer_mutex);
@@ -608,17 +615,29 @@ int main() {
   printk("Calibrating IMUs\n");
   if (calibration(imu_lower_joint, &arm.lowerIMU)) {
     printk("Lower joint IMU %s: Calibration failed\n", imu_lower_joint->name);
-    return 0;
   }
   if (calibration(imu_upper_joint, &arm.upperIMU)) {
     printk("Upper joint IMU %s: Calibration failed\n", imu_upper_joint->name);
-    return 0;
   }
   if (calibration(imu_pitch_roll, &arm.endIMU)) {
     printk("Pitch Roll IMU %s: Calibration failed\n", imu_pitch_roll->name);
-    return 0;
   }
+
+  /* led ready checks */
+  if (!gpio_is_ready_dt(&init_led)) {
+    printk("Initialization led not ready\n");
+  }
+  // if (!gpio_is_ready_dt(&error_led)) {
+  //   printk("Error led not ready\n");
+  // }
+  if (gpio_pin_configure_dt(&init_led, GPIO_OUTPUT_ACTIVE) < 0) {
+    printk("Intitialization led not configured\n");
+  }
+  // if (gpio_pin_configure_dt(&error_led, GPIO_OUTPUT_ACTIVE) < 0) {
+  //   printk("Intitialization led not configured\n");
+  // }
   printk("\nInitialization completed successfully!\n");
+  gpio_pin_set_dt(&init_led, 1); // set initialization led high
 
   /* start running work queue */
   k_work_queue_start(&work_q, stack_area, K_THREAD_STACK_SIZEOF(stack_area),
