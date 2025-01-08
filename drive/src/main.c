@@ -30,7 +30,8 @@ static const struct device *const sbus_uart =
 /* latte panda uart */
 static const struct device *const latte_panda_uart =
     DEVICE_DT_GET(DT_ALIAS(latte_panda_uart));
-
+/* gps uart */
+static const struct device *const gps_uart = DEVICE_DT_GET(DT_ALIAS(gps_uart));
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id)                                            \
   {.dev_spec = PWM_DT_SPEC_GET(pwm_dev_id),                                    \
@@ -70,9 +71,11 @@ struct all_msg {
 int check_crc(struct all_msg *);
 
 /* defining sbus message queue*/
-K_MSGQ_DEFINE(uart_msgq, 25 * sizeof(uint8_t), 10, 1);
+K_MSGQ_DEFINE(sbus_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* defining cobs message queue */
 K_MSGQ_DEFINE(msgq_rx, sizeof(struct all_msg) + 2, 50, 1);
+/* defining gps message queue */
+K_MSGQ_DEFINE(gps_msgq, sizeof(char) * 30, 1000, 1);
 
 /* workq dedicated thread */
 K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
@@ -123,6 +126,7 @@ const int MSG_LEN = sizeof(struct all_msg) + 2; // len of cobs mssg
 uint8_t rx_buf[sizeof(struct all_msg) + 2] = {0};
 uint8_t tx_buf[sizeof(struct all_msg) + 2] = {0};
 int cobs_bytes_read; // to store number of cobs bytes read
+char gps_mssg;       // to store gps message
 /* range variables */
 float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[] = {-5.5, 5.5};
@@ -145,9 +149,28 @@ void sbus_cb(const struct device *dev, void *user_data) {
     packet[sbus_bytes_read++] = c;
   }
   if (sbus_bytes_read == 25) {
-    k_msgq_put(&uart_msgq, &packet, K_NO_WAIT);
+    k_msgq_put(&sbus_msgq, &packet, K_NO_WAIT);
     k_work_submit_to_queue(&work_q, &sbus_work_item);
     sbus_bytes_read = 0;
+  }
+}
+/* interrupt to store gps data */
+void gps_cb(const struct device *dev, void *user_data) {
+  char c;
+  if (!uart_irq_update(gps_uart)) {
+    return;
+  }
+
+  if (!uart_irq_rx_ready(gps_uart)) {
+    return;
+  }
+  while (uart_fifo_read(gps_uart, &c, 1) == 1) {
+    if (gps_mssg == 0xb5)
+      k_msgq_get(&gps_msgq, &gps_mssg, K_MSEC(4));
+    if (gps_mssg == 0x62)
+      for (int i = 0; i < 30; i++) {
+        k_msgq_put(&gps_msgq, &c, K_MSEC(4));
+      }
   }
 }
 /* interrupt to store message from latte panda */
@@ -179,7 +202,7 @@ void cobs_cb(const struct device *dev, void *user_data) {
 void sbus_work_handler(struct k_work *sbus_work_ptr) {
   uint8_t buffer[25] = {0};
   int err;
-  k_msgq_get(&uart_msgq, buffer, K_NO_WAIT);
+  k_msgq_get(&sbus_msgq, buffer, K_NO_WAIT);
   err = parity_checker(packet[23]);
   if (err == 1) {
     printk("Corrupt SBus Packet\n");
@@ -396,7 +419,7 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   k_work_submit_to_queue(&work_q, &(com.cobs_tx_work_item));
 }
 
-void arm_channel_work_handler(struct k_work* work_ptr) {
+void arm_channel_work_handler(struct k_work *work_ptr) {
   struct arm_arg *arm_info =
       CONTAINER_OF(work_ptr, struct arm_arg, channel_work_item);
 
@@ -431,9 +454,9 @@ void arm_channel_work_handler(struct k_work* work_ptr) {
 }
 /* work handler for stepper motor write*/
 void arm_stepper_work_handler(enum StepperDirection *dir, enum msg_type type) {
-    for (int i = 0; i < 5; i++) {
-      arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
-    }
+  for (int i = 0; i < 5; i++) {
+    arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
+  }
 }
 
 /* timer to write to stepper motors*/
@@ -489,6 +512,10 @@ int main() {
   if (!device_is_ready(sbus_uart)) {
     printk("SBUS UART device not ready");
   }
+  /* gps uart ready check */
+  if (!device_is_ready(gps_uart)) {
+    printk("GPS UART device not ready");
+  }
   /* latte panda uart ready check */
   if (!device_is_ready(latte_panda_uart)) {
     printk("LATTE PANDA UART device not ready");
@@ -503,6 +530,17 @@ int main() {
   }
   /* set sbus uart for interrupt */
   err = uart_irq_callback_user_data_set(sbus_uart, sbus_cb, NULL);
+  if (err < 0) {
+    if (err == -ENOTSUP) {
+      printk("Interrupt-driven UART API support 1005not enabled");
+    } else if (err == -ENOSYS) {
+      printk("UART device does not support interrupt-driven API");
+    } else {
+      printk("Error setting UART callback: %d", err);
+    }
+  }
+  /* set gps uart for interrupt */
+  err = uart_irq_callback_user_data_set(gps_uart, gps_cb, NULL);
   if (err < 0) {
     if (err == -ENOTSUP) {
       printk("Interrupt-driven UART API support 1005not enabled");
@@ -587,8 +625,11 @@ int main() {
                      PRIORITY, NULL);
   /* enable interrupt to receive sbus data */
   uart_irq_rx_enable(sbus_uart);
-  /* enablke interrupt to receive cobs data */
+  /* enable interrupt to receive cobs data */
   uart_irq_rx_enable(latte_panda_uart);
+  /* enable interrupt to receive gps data */
+  uart_irq_rx_enable(gps_uart);
+
   /* enabling stepper timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
   k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
