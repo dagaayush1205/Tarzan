@@ -67,7 +67,7 @@ static const struct gpio_dt_spec init_led =
     GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 static const struct gpio_dt_spec sbus_status_led =
     GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
-static const struct device *const error_led = DEVICE_DT_GET(DT_ALIAS(pwm_led0));
+const struct pwm_dt_spec error_led = PWM_DT_SPEC_GET(DT_ALIAS(pwm_led0));
 
 /* common msg struct for coms */
 struct cmd_msg {
@@ -695,15 +695,18 @@ int main() {
   if (!gpio_is_ready_dt(&init_led)) {
     printk("Initialization led not ready\n");
   }
-  // if (!gpio_is_ready_dt(&error_led)) {
-  //   printk("Error led not ready\n");
-  // }
+  if (!gpio_is_ready_dt(&sbus_status_led)) {
+    printk("SBUS Status led not ready\n");
+  }
+  if (!pwm_is_ready_dt(&error_led)) {
+    printk("Error led is not ready");
+  }
   if (gpio_pin_configure_dt(&init_led, GPIO_OUTPUT_ACTIVE) < 0) {
     printk("Intitialization led not configured\n");
   }
-  // if (gpio_pin_configure_dt(&error_led, GPIO_OUTPUT_ACTIVE) < 0) {
-  //   printk("Intitialization led not configured\n");
-  // }
+  if (gpio_pin_configure_dt(&sbus_status_led, GPIO_OUTPUT_ACTIVE) < 0) {
+    printk("SBUS Status led not configured\n");
+  }
   printk("\nInitialization completed successfully!\n");
   gpio_pin_set_dt(&init_led, 1); // set initialization led high
 
