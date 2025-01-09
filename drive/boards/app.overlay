@@ -91,7 +91,7 @@
   	};
 	aliases {
 			latte-panda-uart = &cdc_acm_uart0; 
-			debug-uart = &usart2;
+			telemetry-uart = &usart2;
 			sbus-uart = &usart6;
      			gps-uart = &usart3;
 			stepper-motor1 = &stepper_motor_1; 
