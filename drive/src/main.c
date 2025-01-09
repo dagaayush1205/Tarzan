@@ -517,6 +517,11 @@ void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
   arm_stepper_work_handler(arm.dir, com.msg_rx.type);
 }
 K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
+/* timer to write mssg to latte panda */
+void mssg_timer_handler(struct k_timer *mssg_timer_ptr) {
+  k_work_submit_to_queue(&work_q, &(com.latte_panda_tx_work_item));
+}
+K_TIMER_DEFINE(mssg_timer, mssg_timer_handler, NULL);
 
 int main() {
 
@@ -714,5 +719,6 @@ int main() {
 
   /* enabling stepper timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
+  k_timer_start(&mssg_timer, K_MSEC(10), K_MSEC(1));
   k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 }
