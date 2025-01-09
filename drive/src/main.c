@@ -1,3 +1,4 @@
+#include "zephyr/toolchain.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -27,6 +28,9 @@
 /* sbus uart */
 static const struct device *const sbus_uart =
     DEVICE_DT_GET(DT_ALIAS(sbus_uart));
+/* telemetry uart */
+static const struct device *const telemetry_uart =
+    DEVICE_DT_GET(DT_ALIAS(telemetry_uart));
 /* latte panda uart */
 static const struct device *const latte_panda_uart =
     DEVICE_DT_GET(DT_ALIAS(latte_panda_uart));
@@ -119,7 +123,7 @@ struct arm_arg {
 /* struct for communication with latte panda*/
 struct com_arg {
   struct k_work cobs_rx_work_item;
-  struct k_work cobs_tx_work_item;
+  struct k_work telemetry_tx_work_item;
   struct all_msg msg_rx; // to store decoded mssg
   struct all_msg msg_tx; // to store encoded mssg
 } com;
@@ -162,6 +166,7 @@ void sbus_cb(const struct device *dev, void *user_data) {
 }
 /* interrupt to store gps data */
 void gps_cb(const struct device *dev, void *user_data) {
+  ARG_UNUSED(user_data);
   char c;
   if (!uart_irq_update(gps_uart)) {
     return;
@@ -179,7 +184,6 @@ void gps_cb(const struct device *dev, void *user_data) {
       }
   }
 }
-/* interrupt to store message from latte panda */
 void cobs_cb(const struct device *dev, void *user_data) {
   ARG_UNUSED(user_data);
   uint8_t c;
@@ -220,7 +224,6 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
       parse_buffer(buffer, channel);
       k_sem_give(&ch_sem);
 
-      // arm_channel_work_handler(NULL);
       k_work_submit_to_queue(&work_q, &(arm.channel_work_item));
       k_work_submit_to_queue(&work_q, &(drive.drive_work_item));
     } else {
@@ -244,15 +247,18 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
     printk("Message from Latte Panda is corrupt");
     return;
   }
+  if (com_info->msg_rx.type == INVERSE) {
+    k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
+  }
   if (com_info->msg_rx.type == AUTONOMOUS) {
     k_work_submit_to_queue(&work_q, &(drive.auto_drive_work_item));
   }
 }
 
 /* encode and transmite cobs message */
-void cobs_tx_work_handler(struct k_work *cobs_tx_work_ptr) {
-  struct com_arg *com_info =
-      CONTAINER_OF(cobs_tx_work_ptr, struct com_arg, cobs_tx_work_item);
+void telemetry_tx_work_handler(struct k_work *telemetry_tx_work_ptr) {
+  struct com_arg *com_info = CONTAINER_OF(telemetry_tx_work_ptr, struct com_arg,
+                                          telemetry_tx_work_item);
 
   com_info->msg_tx.auto_cmd.linear_x = 0;
   com_info->msg_tx.auto_cmd.angular_z = 0;
@@ -266,7 +272,7 @@ void cobs_tx_work_handler(struct k_work *cobs_tx_work_ptr) {
   com_info->msg_tx.inv.z = 0;
   com_info->msg_tx.crc = crc32_ieee((uint8_t *)(&com_info->msg_tx),
                                     sizeof(struct all_msg) - sizeof(uint32_t));
-  com_info->msg_tx.type = 0;
+  com_info->msg_tx.type = INVERSE;
 
   cobs_encode_result result = cobs_encode(
       tx_buf, MSG_LEN, (void *)&com_info->msg_tx, sizeof(struct all_msg));
@@ -393,7 +399,7 @@ void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
 void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   struct arm_arg *arm_info =
       CONTAINER_OF(imu_work_ptr, struct arm_arg, imu_work_item);
-  /* cpmpute pitch and roll from imu data */
+  /* compute pitch and roll from imu data */
   if (process_pitch_roll(imu_lower_joint, &(arm_info->lowerIMU)) == 1)
     printk("No data from imu_lower_joint: %s\n", imu_lower_joint->name);
   if (process_pitch_roll(imu_upper_joint, &(arm_info->upperIMU)) == 1)
@@ -423,7 +429,7 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   // printk(" | Move: %d%d %d%d\n", arm.dir[1] >> 1, arm.dir[1] & 0b01,
   //        arm.dir[2] >> 1, arm.dir[2] & 0b01);
 
-  k_work_submit_to_queue(&work_q, &(com.cobs_tx_work_item));
+  k_work_submit_to_queue(&work_q, &(com.telemetry_tx_work_item));
 }
 
 void arm_channel_work_handler(struct k_work *work_ptr) {
@@ -493,7 +499,8 @@ int main() {
   k_work_init(&(arm.imu_work_item), arm_imu_work_handler);
   k_work_init(&(arm.channel_work_item), arm_channel_work_handler);
   k_work_init(&(com.cobs_rx_work_item), cobs_rx_work_handler);
-  k_work_init(&(com.cobs_tx_work_item), cobs_tx_work_handler);
+  k_work_init(&(com.telemetry_tx_work_item), telemetry_tx_work_handler);
+
   /* initializing drive configs */
   const struct DiffDriveConfig tmp_drive_config = {
       .wheel_separation = 0.77f,
@@ -518,6 +525,10 @@ int main() {
   /* sbus uart ready check */
   if (!device_is_ready(sbus_uart)) {
     printk("SBUS UART device not ready");
+  }
+  /* telemetry uart ready check */
+  if (!device_is_ready(telemetry_uart)) {
+    printk("TELEMETRY UART device not ready");
   }
   /* gps uart ready check */
   if (!device_is_ready(gps_uart)) {
@@ -548,6 +559,17 @@ int main() {
   }
   /* set gps uart for interrupt */
   err = uart_irq_callback_user_data_set(gps_uart, gps_cb, NULL);
+  if (err < 0) {
+    if (err == -ENOTSUP) {
+      printk("Interrupt-driven UART API support 1005not enabled");
+    } else if (err == -ENOSYS) {
+      printk("UART device does not support interrupt-driven API");
+    } else {
+      printk("Error setting UART callback: %d", err);
+    }
+  }
+  /* set telemtry uart for interrupt */
+  err = uart_irq_callback_user_data_set(telemetry_uart, cobs_cb, NULL);
   if (err < 0) {
     if (err == -ENOTSUP) {
       printk("Interrupt-driven UART API support 1005not enabled");
