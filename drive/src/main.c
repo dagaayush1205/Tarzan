@@ -69,21 +69,29 @@ static const struct gpio_dt_spec sbus_status_led =
     GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 static const struct device *const error_led = DEVICE_DT_GET(DT_ALIAS(pwm_led0));
 
-/* msg for com with latte panda */
-struct all_msg {
+/* common msg struct for coms */
+struct cmd_msg {
   struct DiffDriveTwist auto_cmd;
   struct inverse_msg inv;
   uint32_t crc;
   enum msg_type type;
 };
+/* msg struct for com with base station */
+struct base_station_msg {
+  char gps_msg[30];
+  double accel;
+  double compass;
+  uint32_t msg_status;
+  uint32_t crc;
+};
 
 /* decleration of check_crc func*/
-int check_crc(struct all_msg *);
+int check_crc(struct cmd_msg *);
 
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(sbus_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* defining cobs message queue */
-K_MSGQ_DEFINE(msgq_rx, sizeof(struct all_msg) + 2, 50, 1);
+K_MSGQ_DEFINE(msgq_rx, sizeof(struct cmd_msg) + 2, 50, 1);
 /* defining gps message queue */
 K_MSGQ_DEFINE(gps_msgq, sizeof(char) * 30, 1000, 1);
 
@@ -124,17 +132,22 @@ struct arm_arg {
 struct com_arg {
   struct k_work cobs_rx_work_item;
   struct k_work telemetry_tx_work_item;
-  struct all_msg msg_rx; // to store decoded mssg
-  struct all_msg msg_tx; // to store encoded mssg
+  struct k_work latte_panda_tx_work_item;
+  struct cmd_msg msg_rx;     // to store decoded mssg
+  struct cmd_msg inv_msg_tx; // to store encoded inverse mssg
+  struct base_station_msg bs_msg_tx;
 } com;
 
 int ch_reader_cnt;          // no. of readers accessing channels
 uint16_t channel[16] = {0}; // to store sbus channels
 uint8_t packet[25];         // to store sbus packets
 int sbus_bytes_read;        // to store number of sbus bytes read
-const int MSG_LEN = sizeof(struct all_msg) + 2; // len of cobs mssg
-uint8_t rx_buf[sizeof(struct all_msg) + 2] = {0};
-uint8_t tx_buf[sizeof(struct all_msg) + 2] = {0};
+const int INV_MSG_LEN = sizeof(struct cmd_msg) + 2; // len of inverse mssg
+const int BS_MSG_LEN =
+    sizeof(struct base_station_msg) + 2; // len of base station mssg
+uint8_t rx_buf[sizeof(struct cmd_msg) + 2] = {0};
+uint8_t inv_tx_buf[sizeof(struct cmd_msg) + 2] = {0};
+uint8_t bs_tx_buf[sizeof(struct base_station_msg) + 2] = {0};
 int cobs_bytes_read; // to store number of cobs bytes read
 char gps_mssg;       // to store gps message
 /* range variables */
@@ -196,7 +209,7 @@ void cobs_cb(const struct device *dev, void *user_data) {
   while (uart_fifo_read(dev, &c, 1) == 1) {
     if (c == 0x00 && cobs_bytes_read > 0) {
       rx_buf[cobs_bytes_read] = 0;
-      if (cobs_bytes_read != (MSG_LEN - 1)) {
+      if (cobs_bytes_read != (INV_MSG_LEN - 1)) {
         cobs_bytes_read = 0;
         continue;
       }
@@ -233,12 +246,13 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
 }
 /* received cobs message work handler */
 void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
-  uint8_t buf[MSG_LEN];
+  uint8_t buf[INV_MSG_LEN];
   struct com_arg *com_info =
       CONTAINER_OF(cobs_rx_work_ptr, struct com_arg, cobs_rx_work_item);
   k_msgq_get(&msgq_rx, buf, K_MSEC(4));
-  cobs_decode_result result = cobs_decode(
-      (void *)&(com_info->msg_rx), sizeof(com_info->msg_rx), buf, MSG_LEN - 1);
+  cobs_decode_result result =
+      cobs_decode((void *)&(com_info->msg_rx), sizeof(com_info->msg_rx), buf,
+                  INV_MSG_LEN - 1);
   if (result.status != COBS_DECODE_OK) {
     printk("COBS Decode Failed %d\n", result.status);
     return;
@@ -255,44 +269,70 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
   }
 }
 
-/* encode and transmite cobs message */
+/* encode and transmit cobs message */
 void telemetry_tx_work_handler(struct k_work *telemetry_tx_work_ptr) {
   struct com_arg *com_info = CONTAINER_OF(telemetry_tx_work_ptr, struct com_arg,
                                           telemetry_tx_work_item);
 
-  com_info->msg_tx.auto_cmd.linear_x = 0;
-  com_info->msg_tx.auto_cmd.angular_z = 0;
-  com_info->msg_tx.inv.turn_table = 0;
-  com_info->msg_tx.inv.first_link = -1 * arm.lowerIMU.pitch;
-  com_info->msg_tx.inv.second_link = arm.upperIMU.pitch;
-  com_info->msg_tx.inv.pitch = arm.endIMU.pitch;
-  com_info->msg_tx.inv.roll = 0;
-  com_info->msg_tx.inv.x = 0;
-  com_info->msg_tx.inv.y = 0;
-  com_info->msg_tx.inv.z = 0;
-  com_info->msg_tx.crc = crc32_ieee((uint8_t *)(&com_info->msg_tx),
-                                    sizeof(struct all_msg) - sizeof(uint32_t));
-  com_info->msg_tx.type = INVERSE;
+  com_info->inv_msg_tx.auto_cmd.linear_x = 0;
+  com_info->inv_msg_tx.auto_cmd.angular_z = 0;
+  com_info->inv_msg_tx.inv.turn_table = 0;
+  com_info->inv_msg_tx.inv.first_link = -1 * arm.lowerIMU.pitch;
+  com_info->inv_msg_tx.inv.second_link = arm.upperIMU.pitch;
+  com_info->inv_msg_tx.inv.pitch = arm.endIMU.pitch;
+  com_info->inv_msg_tx.inv.roll = arm.endIMU.roll;
+  com_info->inv_msg_tx.inv.x = 0;
+  com_info->inv_msg_tx.inv.y = 0;
+  com_info->inv_msg_tx.inv.z = 0;
+  com_info->inv_msg_tx.crc =
+      crc32_ieee((uint8_t *)(&com_info->inv_msg_tx),
+                 sizeof(struct cmd_msg) - sizeof(uint32_t));
+  com_info->inv_msg_tx.type = INVERSE;
 
-  cobs_encode_result result = cobs_encode(
-      tx_buf, MSG_LEN, (void *)&com_info->msg_tx, sizeof(struct all_msg));
+  cobs_encode_result result =
+      cobs_encode(inv_tx_buf, INV_MSG_LEN, (void *)&com_info->inv_msg_tx,
+                  sizeof(struct cmd_msg));
 
   if (result.status != COBS_ENCODE_OK) {
     printk("COBS Encoded Failed %d\n", result.status);
     return;
   }
-  tx_buf[MSG_LEN - 1] = 0x00;
-  for (int i = 0; i < MSG_LEN; i++) {
-    uart_poll_out(latte_panda_uart, tx_buf[i]);
+  inv_tx_buf[INV_MSG_LEN - 1] = 0x00;
+  for (int i = 0; i < INV_MSG_LEN; i++) {
+    uart_poll_out(telemetry_uart, inv_tx_buf[i]);
   }
 }
+void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
+  struct com_arg *com_info = CONTAINER_OF(
+      latte_panda_tx_work_ptr, struct com_arg, latte_panda_tx_work_item);
 
+  k_msgq_get(&gps_msgq, com_info->bs_msg_tx.gps_msg, K_MSEC(4));
+  com_info->bs_msg_tx.accel = 0;
+  com_info->bs_msg_tx.compass = 0;
+  com_info->bs_msg_tx.msg_status = 0;
+  com_info->inv_msg_tx.crc =
+      crc32_ieee((uint8_t *)(&com_info->bs_msg_tx),
+                 sizeof(struct base_station_msg) - sizeof(uint32_t));
+
+  cobs_encode_result result =
+      cobs_encode(bs_tx_buf, INV_MSG_LEN, (void *)&com_info->bs_msg_tx,
+                  sizeof(struct base_station_msg));
+
+  if (result.status != COBS_ENCODE_OK) {
+    printk("COBS Encoded Failed %d\n", result.status);
+    return;
+  }
+  bs_tx_buf[BS_MSG_LEN - 1] = 0x00;
+  for (int i = 0; i < BS_MSG_LEN; i++) {
+    uart_poll_out(latte_panda_uart, bs_tx_buf[i]);
+  }
+}
 /* check if received cobs message is valid,
  * ret 0 if successfull */
-int check_crc(struct all_msg *msg) {
+int check_crc(struct cmd_msg *msg) {
   uint32_t valid_crc;
   valid_crc =
-      crc32_ieee((uint8_t *)msg, sizeof(struct all_msg) - sizeof(uint32_t));
+      crc32_ieee((uint8_t *)msg, sizeof(struct cmd_msg) - sizeof(uint32_t));
   if (valid_crc != msg->crc) {
     return 1;
   }
@@ -500,6 +540,7 @@ int main() {
   k_work_init(&(arm.channel_work_item), arm_channel_work_handler);
   k_work_init(&(com.cobs_rx_work_item), cobs_rx_work_handler);
   k_work_init(&(com.telemetry_tx_work_item), telemetry_tx_work_handler);
+  k_work_init(&(com.latte_panda_tx_work_item), telemetry_tx_work_handler);
 
   /* initializing drive configs */
   const struct DiffDriveConfig tmp_drive_config = {
