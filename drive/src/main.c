@@ -405,6 +405,22 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   if (pwm_motor_write(&(motor[3]), sbus_pwm_interpolation(channel[3], pwm_range,
                                                           channel_range)))
     printk("Linear Actuator: Unable to write");
+  // gripper/bio-arm write
+  if (pwm_motor_write(&(motor[4]), sbus_pwm_interpolation(channel[4], pwm_range,
+                                                          channel_range)))
+    printk("Gripper/Bio-Arm: Unable to write");
+  // abox/mini-acctuator/ogger write
+  if (pwm_motor_write(&(motor[5]), sbus_pwm_interpolation(channel[5], pwm_range,
+                                                          channel_range)))
+    printk("Mini-Acc/Ogger: Unable to write");
+  // cache-box write
+  if (pwm_motor_write(&(motor[8]), sbus_pwm_interpolation(channel[6], pwm_range,
+                                                          channel_range)))
+    printk("Cache-Box Servo: Unable to write");
+  // microscope servo write
+  if (pwm_motor_write(&(motor[9]), sbus_pwm_interpolation(channel[7], pwm_range,
+                                                          channel_range)))
+    printk("Microscope Servo: Unable to write");
   // pan servo write
   if (pwm_motor_write(
           &(motor[6]),
