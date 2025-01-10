@@ -369,15 +369,6 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   struct drive_arg *drive_info =
       CONTAINER_OF(drive_work_ptr, struct drive_arg, drive_work_item);
   uint64_t drive_timestamp;
-
-  if (com.msg_rx.type == AUTONOMOUS) {
-    drive_timestamp = k_uptime_get();
-    drive_info->cmd.angular_z = com.msg_rx.auto_cmd.angular_z;
-    drive_info->cmd.linear_x = com.msg_rx.auto_cmd.linear_x;
-    diffdrive_update(drive_info->drive_init, drive_info->cmd,
-                     drive_info->time_last_drive_update);
-    drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
-  }
   if (k_mutex_lock(&ch_writer_mutex, K_NO_WAIT) != 0) {
     return;
   }
@@ -405,32 +396,35 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   if (pwm_motor_write(&(motor[3]), sbus_pwm_interpolation(channel[3], pwm_range,
                                                           channel_range)))
     printk("Linear Actuator: Unable to write");
-  // gripper/bio-arm write
-  if (pwm_motor_write(&(motor[4]), sbus_pwm_interpolation(channel[4], pwm_range,
-                                                          channel_range)))
-    printk("Gripper/Bio-Arm: Unable to write");
-  // abox/mini-acctuator/ogger write
-  if (pwm_motor_write(&(motor[5]), sbus_pwm_interpolation(channel[5], pwm_range,
-                                                          channel_range)))
-    printk("Mini-Acc/Ogger: Unable to write");
-  // cache-box write
-  if (pwm_motor_write(&(motor[8]), sbus_pwm_interpolation(channel[6], pwm_range,
-                                                          channel_range)))
-    printk("Cache-Box Servo: Unable to write");
-  // microscope servo write
-  if (pwm_motor_write(&(motor[9]), sbus_pwm_interpolation(channel[7], pwm_range,
-                                                          channel_range)))
-    printk("Microscope Servo: Unable to write");
-  // pan servo write
-  if (pwm_motor_write(
-          &(motor[6]),
-          sbus_pwm_interpolation(channel[9], servo_pwm_range, channel_range)))
-    printk("Pan Servo: Unable to write");
-  // tilt servo write
-  if (pwm_motor_write(
-          &(motor[7]),
-          sbus_pwm_interpolation(channel[10], servo_pwm_range, channel_range)))
-    printk("Tilt Servo: Unable to write");
+  // checking mode
+  if (channel[8] >= 992) {
+    // gripper/bio-arm write
+    if (pwm_motor_write(&(motor[4]), sbus_pwm_interpolation(
+                                         channel[4], pwm_range, channel_range)))
+      printk("Gripper/Bio-Arm: Unable to write");
+    // abox/mini-acctuator/ogger write
+    if (pwm_motor_write(&(motor[5]), sbus_pwm_interpolation(
+                                         channel[5], pwm_range, channel_range)))
+      printk("Mini-Acc/Ogger: Unable to write");
+    // cache-box write
+    if (pwm_motor_write(&(motor[8]), sbus_pwm_interpolation(
+                                         channel[6], pwm_range, channel_range)))
+      printk("Cache-Box Servo: Unable to write");
+    // microscope servo write
+    if (pwm_motor_write(&(motor[9]), sbus_pwm_interpolation(
+                                         channel[7], pwm_range, channel_range)))
+      printk("Microscope Servo: Unable to write");
+    // pan servo write
+    if (pwm_motor_write(
+            &(motor[6]),
+            sbus_pwm_interpolation(channel[9], servo_pwm_range, channel_range)))
+      printk("Pan Servo: Unable to write");
+    // tilt servo write
+    if (pwm_motor_write(&(motor[7]),
+                        sbus_pwm_interpolation(channel[10], servo_pwm_range,
+                                               channel_range)))
+      printk("Tilt Servo: Unable to write");
+  }
   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
   ch_reader_cnt--;
   if (ch_reader_cnt == 0) {
@@ -502,15 +496,17 @@ void arm_channel_work_handler(struct k_work *work_ptr) {
   }
   ch_reader_cnt++;
   k_mutex_unlock(&ch_reader_cnt_mutex);
-
-  uint16_t arm_channels[5] = {channel[6], channel[5], channel[4], 992, 992};
-  for (int i = 0; i < 5; i++) {
-    if (arm_channels[i] > 992) {
-      arm_info->dir[i] = HIGH_PULSE;
-    } else if (arm_channels[i] < 800) {
-      arm_info->dir[i] = LOW_PULSE;
-    } else {
-      arm_info->dir[i] = STOP_PULSE;
+  if (channel[8] < 992) {
+    uint16_t arm_channels[5] = {channel[4], channel[5], channel[9], channel[6],
+                                channel[7]};
+    for (int i = 0; i < 5; i++) {
+      if (arm_channels[i] > 992) {
+        arm_info->dir[i] = HIGH_PULSE;
+      } else if (arm_channels[i] < 800) {
+        arm_info->dir[i] = LOW_PULSE;
+      } else {
+        arm_info->dir[i] = STOP_PULSE;
+      }
     }
   }
 
