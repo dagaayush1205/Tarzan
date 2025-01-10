@@ -78,7 +78,7 @@ struct cmd_msg {
 };
 /* msg struct for com with base station */
 struct base_station_msg {
-  char gps_msg[30];
+  char gps_msg[100];
   double accel;
   double compass;
   uint32_t msg_status;
@@ -190,10 +190,10 @@ void gps_cb(const struct device *dev, void *user_data) {
   }
   while (uart_fifo_read(gps_uart, &c, 1) == 1) {
     if (gps_mssg == 0xb5)
-      k_msgq_get(&gps_msgq, &gps_mssg, K_MSEC(4));
+      k_msgq_get(&gps_msgq, &gps_mssg, K_NO_WAIT);
     if (gps_mssg == 0x62)
       for (int i = 0; i < 30; i++) {
-        k_msgq_put(&gps_msgq, &c, K_MSEC(4));
+        k_msgq_put(&gps_msgq, &c, K_NO_WAIT);
       }
   }
 }
@@ -228,7 +228,7 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
   k_msgq_get(&sbus_msgq, buffer, K_NO_WAIT);
   err = parity_checker(packet[23]);
   if (err == 1) {
-    printk("Corrupt SBus Packet\n");
+    printk("Corrupt SBUS Packet\n");
   } else {
     gpio_pin_set_dt(&sbus_status_led, 1); // set sbus status led high
     k_mutex_lock(&ch_writer_mutex, K_FOREVER);
@@ -258,7 +258,7 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
     return;
   }
   if (check_crc(&com_info->msg_rx) != 0) {
-    printk("Message from Latte Panda is corrupt");
+    printk("Message received is corrupt");
     return;
   }
   if (com_info->msg_rx.type == INVERSE) {
@@ -401,20 +401,20 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   // linear actuator write
   if (pwm_motor_write(&(motor[2]), sbus_pwm_interpolation(channel[2], pwm_range,
                                                           channel_range)))
-    printk("Linear Actuator: Unable to write at linear actuator");
+    printk("Linear Actuator: Unable to write");
   if (pwm_motor_write(&(motor[3]), sbus_pwm_interpolation(channel[3], pwm_range,
                                                           channel_range)))
-    printk("Linear Actuator: Unable to write at linear actuator");
+    printk("Linear Actuator: Unable to write");
   // pan servo write
   if (pwm_motor_write(
           &(motor[6]),
           sbus_pwm_interpolation(channel[9], servo_pwm_range, channel_range)))
-    printk("Pan Servo: Unable to write at gripper");
+    printk("Pan Servo: Unable to write");
   // tilt servo write
   if (pwm_motor_write(
           &(motor[7]),
           sbus_pwm_interpolation(channel[10], servo_pwm_range, channel_range)))
-    printk("Tilt Servo: Unable to write at gripper");
+    printk("Tilt Servo: Unable to write");
   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
   ch_reader_cnt--;
   if (ch_reader_cnt == 0) {
