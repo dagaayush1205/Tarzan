@@ -79,8 +79,6 @@ struct cmd_msg {
 /* msg struct for com with base station */
 struct base_station_msg {
   char gps_msg[100];
-  double accel;
-  double compass;
   uint32_t msg_status;
   uint32_t crc;
 };
@@ -93,7 +91,7 @@ K_MSGQ_DEFINE(sbus_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* defining cobs message queue */
 K_MSGQ_DEFINE(msgq_rx, sizeof(struct cmd_msg) + 2, 50, 1);
 /* defining gps message queue */
-K_MSGQ_DEFINE(gps_msgq, sizeof(char) * 30, 1000, 1);
+K_MSGQ_DEFINE(gps_msgq, sizeof(uint8_t) * 100, 10, 1);
 
 /* workq dedicated thread */
 K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
@@ -141,7 +139,9 @@ struct com_arg {
 int ch_reader_cnt;                 // no. of readers accessing channels
 uint16_t channel[16] = {0};        // to store sbus channels
 uint8_t packet[25];                // to store sbus packets
+uint8_t gps_mssg[100];             // to store gps mssg
 int sbus_bytes_read;               // to store number of sbus bytes read
+int gps_bytes_read;                // to store number of gps bytes read
 uint32_t error_mssg_flag = 0x0000; // to store error status byte
 const int INV_MSG_LEN = sizeof(struct cmd_msg) + 2; // len of inverse mssg
 const int BS_MSG_LEN =
@@ -150,7 +150,6 @@ uint8_t rx_buf[sizeof(struct cmd_msg) + 2] = {0};
 uint8_t inv_tx_buf[sizeof(struct cmd_msg) + 2] = {0};
 uint8_t bs_tx_buf[sizeof(struct base_station_msg) + 2] = {0};
 int cobs_bytes_read; // to store number of cobs bytes read
-char gps_mssg;       // to store gps message
 /* range variables */
 float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[] = {-5.5, 5.5};
@@ -189,13 +188,20 @@ void gps_cb(const struct device *dev, void *user_data) {
   if (!uart_irq_rx_ready(gps_uart)) {
     return;
   }
-  while (uart_fifo_read(gps_uart, &c, 1) == 1) {
-    if (gps_mssg == 0xb5)
-      k_msgq_get(&gps_msgq, &gps_mssg, K_NO_WAIT);
-    if (gps_mssg == 0x62)
-      for (int i = 0; i < 30; i++) {
-        k_msgq_put(&gps_msgq, &c, K_NO_WAIT);
-      }
+  while (gps_bytes_read < 100 && uart_fifo_read(gps_uart, &c, 1)) {
+    if (gps_bytes_read == 0 && c != 0xb5)
+      continue;
+    if (gps_bytes_read == 1 && c != 0x62)
+      continue;
+    if (gps_bytes_read == 2 && c != 0x01)
+      continue;
+    if (gps_bytes_read == 3 && c != 0x07)
+      continue;
+    gps_mssg[gps_bytes_read++] = c;
+  }
+  if (gps_bytes_read == 100) {
+    k_msgq_put(&gps_msgq, gps_mssg, K_NO_WAIT);
+    gps_bytes_read = 0;
   }
 }
 void cobs_cb(const struct device *dev, void *user_data) {
@@ -312,8 +318,6 @@ void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
       latte_panda_tx_work_ptr, struct com_arg, latte_panda_tx_work_item);
 
   k_msgq_get(&gps_msgq, com_info->bs_msg_tx.gps_msg, K_MSEC(4));
-  com_info->bs_msg_tx.accel = 0;
-  com_info->bs_msg_tx.compass = 0;
   com_info->bs_msg_tx.msg_status = error_mssg_flag;
   com_info->inv_msg_tx.crc =
       crc32_ieee((uint8_t *)(&com_info->bs_msg_tx),
