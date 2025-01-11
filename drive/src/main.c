@@ -768,6 +768,6 @@ int main() {
 
   /* enabling stepper & mssg timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
-  // k_timer_start(&mssg_timer, K_MSEC(10), K_MSEC(1));
+  k_timer_start(&mssg_timer, K_MSEC(10), K_SECONDS(1));
   // k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 }
