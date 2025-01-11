@@ -635,7 +635,7 @@ int main() {
   err = uart_irq_callback_user_data_set(sbus_uart, sbus_cb, NULL);
   if (err < 0) {
     if (err == -ENOTSUP) {
-      printk("Interrupt-driven UART API support 1005not enabled");
+      printk("Interrupt-driven UART API support not enabled");
     } else if (err == -ENOSYS) {
       printk("UART device does not support interrupt-driven API");
     } else {
@@ -646,7 +646,7 @@ int main() {
   err = uart_irq_callback_user_data_set(gps_uart, gps_cb, NULL);
   if (err < 0) {
     if (err == -ENOTSUP) {
-      printk("Interrupt-driven UART API support 1005not enabled");
+      printk("Interrupt-driven UART API support not enabled");
     } else if (err == -ENOSYS) {
       printk("UART device does not support interrupt-driven API");
     } else {
@@ -657,7 +657,7 @@ int main() {
   err = uart_irq_callback_user_data_set(telemetry_uart, cobs_cb, NULL);
   if (err < 0) {
     if (err == -ENOTSUP) {
-      printk("Interrupt-driven UART API support 1005not enabled");
+      printk("Interrupt-driven UART API support not enabled");
     } else if (err == -ENOSYS) {
       printk("UART device does not support interrupt-driven API");
     } else {
@@ -668,7 +668,7 @@ int main() {
   err = uart_irq_callback_user_data_set(latte_panda_uart, cobs_cb, NULL);
   if (err < 0) {
     if (err == -ENOTSUP) {
-      printk("Interrupt-driven UART API support 1005not enabled");
+      printk("Interrupt-driven UART API support not enabled");
     } else if (err == -ENOSYS) {
       printk("UART device does not support interrupt-driven API");
     } else {
@@ -720,13 +720,13 @@ int main() {
 
   /* Calibrating IMUs */
   printk("Calibrating IMUs\n");
-  if (calibration(imu_lower_joint, &arm.lowerIMU)) {
+  if (!calibration(imu_lower_joint, &arm.lowerIMU)) {
     printk("Lower joint IMU %s: Calibration failed\n", imu_lower_joint->name);
   }
-  if (calibration(imu_upper_joint, &arm.upperIMU)) {
+  if (!calibration(imu_upper_joint, &arm.upperIMU)) {
     printk("Upper joint IMU %s: Calibration failed\n", imu_upper_joint->name);
   }
-  if (calibration(imu_pitch_roll, &arm.endIMU)) {
+  if (!calibration(imu_pitch_roll, &arm.endIMU)) {
     printk("Pitch Roll IMU %s: Calibration failed\n", imu_pitch_roll->name);
   }
 
@@ -740,10 +740,10 @@ int main() {
   if (!pwm_is_ready_dt(&error_led)) {
     printk("Error led is not ready");
   }
-  if (gpio_pin_configure_dt(&init_led, GPIO_OUTPUT_ACTIVE) < 0) {
+  if (gpio_pin_configure_dt(&init_led, GPIO_OUTPUT_INACTIVE) < 0) {
     printk("Intitialization led not configured\n");
   }
-  if (gpio_pin_configure_dt(&sbus_status_led, GPIO_OUTPUT_ACTIVE) < 0) {
+  if (gpio_pin_configure_dt(&sbus_status_led, GPIO_OUTPUT_INACTIVE) < 0) {
     printk("SBUS Status led not configured\n");
   }
   printk("\nInitialization completed successfully!\n");
