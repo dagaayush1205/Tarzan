@@ -73,13 +73,14 @@ const struct pwm_dt_spec error_led = PWM_DT_SPEC_GET(DT_ALIAS(pwm_led0));
 struct cmd_msg {
   struct DiffDriveTwist auto_cmd;
   struct inverse_msg inv;
-  uint32_t crc;
   enum msg_type type;
+  uint32_t crc;
 };
 /* msg struct for com with base station */
 struct base_station_msg {
   char gps_msg[100];
   uint32_t msg_status;
+  enum msg_type type;
   uint32_t crc;
 };
 
@@ -268,7 +269,7 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
   }
   if (check_crc(&com_info->msg_rx) != 0) {
     error_mssg_flag = error_mssg_flag & 0x0003;
-    // printk("Message from latte panda is corrupt");
+    // printk("Message from latte panda is corrupt\n");
     return;
   }
   if (com_info->msg_rx.type == INVERSE) {
@@ -342,7 +343,7 @@ void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
 int check_crc(struct cmd_msg *msg) {
   uint32_t valid_crc;
   valid_crc =
-      crc32_ieee((uint8_t *)msg, sizeof(struct cmd_msg) - sizeof(uint32_t));
+      crc32_ieee((uint8_t *)msg, sizeof(struct cmd_msg) - sizeof(msg->crc));
   if (valid_crc != msg->crc) {
     return 1;
   }
@@ -570,7 +571,8 @@ int main() {
 
   printk("Tarzan version %s\nFile: %s\n", TARZAN_GIT_VERSION, __FILE__);
 
-  int err, dtr;
+  int err;
+  // uint32_t dtr = 0;
 
   /* initializing work queue */
   k_work_queue_init(&work_q);
@@ -630,11 +632,12 @@ int main() {
   if (usb_enable(NULL)) {
     return 0;
   }
-  /* get uart line control */
-  uart_line_ctrl_get(latte_panda_uart, UART_LINE_CTRL_DTR, &dtr);
-  if (!dtr) {
-    printk("Unable to get uart line contorl\n");
-  }
+  // /* get uart line control */
+  // while (!dtr) {
+  //   printk("error\n");
+  //   uart_line_ctrl_get(latte_panda_uart, UART_LINE_CTRL_DTR, &dtr);
+  //   k_sleep(K_MSEC(100));
+  // }
   /* set sbus uart for interrupt */
   err = uart_irq_callback_user_data_set(sbus_uart, sbus_cb, NULL);
   if (err < 0) {
@@ -750,7 +753,7 @@ int main() {
   if (gpio_pin_configure_dt(&sbus_status_led, GPIO_OUTPUT_INACTIVE) < 0) {
     printk("SBUS Status led not configured\n");
   }
-  printk("\nInitialization completed successfully!\n");
+  printk("Initialization completed successfully!\n");
   gpio_pin_set_dt(&init_led, 1); // set initialization led high
 
   /* start running work queue */
@@ -763,8 +766,8 @@ int main() {
   /* enable interrupt to receive gps data */
   uart_irq_rx_enable(gps_uart);
 
-  /* enabling stepper timer */
+  /* enabling stepper & mssg timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
-  k_timer_start(&mssg_timer, K_MSEC(10), K_MSEC(1));
-  k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
+  // k_timer_start(&mssg_timer, K_MSEC(10), K_MSEC(1));
+  // k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 }
