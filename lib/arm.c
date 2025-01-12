@@ -43,9 +43,10 @@ int calibration(const struct device *dev, struct joint *IMU) {
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
   double true_gyro = 0;
+  int rc;
   for (int i = 0; i < 1000; i++) {
 
-    int rc = sensor_sample_fetch(dev);
+    rc = sensor_sample_fetch(dev);
 
     if (rc == 0)
       rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
@@ -57,8 +58,11 @@ int calibration(const struct device *dev, struct joint *IMU) {
       IMU->gyro_offset[i] += (sensor_value_to_double(&gyro[i]) - true_gyro);
     k_sleep(K_MSEC(1));
   }
-  for (int i = 0; i < 3; i++)
-    IMU->gyro_offset[i] = IMU->gyro_offset[i] / 1000.0;
+  if (rc == 0) {
+    for (int i = 0; i < 3; i++)
+      IMU->gyro_offset[i] = IMU->gyro_offset[i] / 1000.0;
+  } else
+    return 1;
 
   return 0;
 }
