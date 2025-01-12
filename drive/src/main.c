@@ -529,15 +529,15 @@ void arm_channel_work_handler(struct k_work *work_ptr) {
   /* neutral */
   if (channel[8] >= 992) {
     // setting pitch (motors same direction)
-    if (channel[2] > 992 || channel[2] < 800) {
-      arm_channels[3] = channel[2];
-      arm_channels[4] = channel[2];
-    }
-    // setting roll (motors opposite direction)
     if (channel[7] > 992 || channel[7] < 800) {
       arm_channels[3] = channel[7];
+      arm_channels[4] = channel[7];
+    }
+    // setting roll (motors opposite direction)
+    if (channel[2] > 992 || channel[2] < 800) {
+      arm_channels[3] = channel[2];
       arm_channels[4] =
-          abs(channel[7] -
+          abs(channel[2] -
               1400); // subtracting arbitary value to set opposite direction
     }
     // do not move if cmd to both the channels
