@@ -236,6 +236,7 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
   err = parity_checker(packet[23]);
 
   if (err == 1) {
+    gpio_pin_set_dt(&sbus_status_led, 0); // set sbus status led low
     error_mssg_flag = error_mssg_flag | 0x0001;
     // printk("Corrupt SBUS Packet\n");
   } else {
@@ -250,7 +251,6 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
     } else {
       k_mutex_unlock(&ch_writer_mutex);
     }
-    gpio_pin_set_dt(&sbus_status_led, 0); // set sbus status led low
   }
 }
 /* received cobs message work handler */
@@ -741,15 +741,16 @@ int main() {
 
   /* Calibrating IMUs */
   printk("Calibrating IMUs\n");
-  if (!calibration(imu_lower_joint, &arm.lowerIMU)) {
+  if (calibration(imu_lower_joint, &arm.lowerIMU)) {
     printk("Lower joint IMU %s: Calibration failed\n", imu_lower_joint->name);
   }
-  if (!calibration(imu_upper_joint, &arm.upperIMU)) {
+  if (calibration(imu_upper_joint, &arm.upperIMU)) {
     printk("Upper joint IMU %s: Calibration failed\n", imu_upper_joint->name);
   }
-  if (!calibration(imu_pitch_roll, &arm.endIMU)) {
+  if (calibration(imu_pitch_roll, &arm.endIMU)) {
     printk("Pitch Roll IMU %s: Calibration failed\n", imu_pitch_roll->name);
   }
+  printk("Calibration Finished\n");
 
   /* led ready checks */
   if (!gpio_is_ready_dt(&init_led)) {
