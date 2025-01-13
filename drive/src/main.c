@@ -142,7 +142,7 @@ uint8_t packet[25];                // to store sbus packets
 uint8_t gps_mssg[100];             // to store gps mssg
 int sbus_bytes_read;               // to store number of sbus bytes read
 int gps_bytes_read;                // to store number of gps bytes read
-uint16_t error_mssg_flag = 0x0000; // to store error status byte
+uint16_t error_mssg_flag = 0x0001; // to store error status byte
 const int INV_MSG_LEN = sizeof(struct cmd_msg) + 2; // len of inverse mssg
 const int BS_MSG_LEN =
     sizeof(struct base_station_msg) + 2; // len of base station mssg
@@ -268,7 +268,7 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
     return;
   }
   if (check_crc(&com_info->msg_rx) != 0) {
-    error_mssg_flag = error_mssg_flag | 0x0003;
+    error_mssg_flag = error_mssg_flag | 0x0004;
     // printk("Message from latte panda is corrupt\n");
     return;
   }
@@ -305,7 +305,7 @@ void telemetry_tx_work_handler(struct k_work *telemetry_tx_work_ptr) {
                   sizeof(struct cmd_msg));
 
   if (result.status != COBS_ENCODE_OK) {
-    error_mssg_flag = error_mssg_flag | 0x0004;
+    error_mssg_flag = error_mssg_flag | 0x0008;
     // printk("COBS Encoded Failed %d\n", result.status);
     return;
   }
@@ -334,6 +334,7 @@ void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
   for (int i = 0; i < BS_MSG_LEN; i++) {
     uart_poll_out(latte_panda_uart, bs_tx_buf[i]);
   }
+  error_mssg_flag = 0x0000;
 }
 /* check if received cobs message is valid,
  * ret 0 if successfull */
@@ -355,14 +356,14 @@ int velocity_callback(const float *velocity_buffer, int buffer_len,
   if (pwm_motor_write(&(motor[0]), velocity_pwm_interpolation(
                                        *(velocity_buffer), wheel_velocity_range,
                                        pwm_range))) {
-    error_mssg_flag = error_mssg_flag | 0x0008;
+    error_mssg_flag = error_mssg_flag | 0x0010;
     // printk("Drive: Unable to write pwm pulse to Left");
     return 1;
   }
   if (pwm_motor_write(&(motor[1]), velocity_pwm_interpolation(
                                        *(velocity_buffer + wheels_per_side + 1),
                                        wheel_velocity_range, pwm_range))) {
-    error_mssg_flag = error_mssg_flag | 0x0010;
+    error_mssg_flag = error_mssg_flag | 0x0020;
     // printk("Drive: Unable to write pwm pulse to Right");
     return 1;
   }
@@ -403,20 +404,20 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   // gripper/bio-arm write
   if (pwm_motor_write(&(motor[4]), sbus_pwm_interpolation(channel[3], pwm_range,
                                                           channel_range)))
-    error_mssg_flag = error_mssg_flag | 0x0020;
+    error_mssg_flag = error_mssg_flag | 0x0040;
   // printk("Gripper/Bio-Arm: Unable to write");
 
   // tilt servo write
   if (pwm_motor_write(
           &(motor[6]),
           sbus_pwm_interpolation(channel[10], servo_pwm_range, channel_range)))
-    error_mssg_flag = error_mssg_flag | 0x0040;
+    error_mssg_flag = error_mssg_flag | 0x0080;
   // printk("Tilt Servo: Unable to write");
   // pan servo write
   if (pwm_motor_write(
           &(motor[7]),
           sbus_pwm_interpolation(channel[9], servo_pwm_range, channel_range)))
-    error_mssg_flag = error_mssg_flag | 0x0080;
+    error_mssg_flag = error_mssg_flag | 0x0100;
   // printk("Pan Servo: Unable to write");
 
   /* checking mode */
@@ -424,17 +425,17 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
     // linear actuator write
     if (pwm_motor_write(&(motor[2]), sbus_pwm_interpolation(
                                          channel[7], pwm_range, channel_range)))
-      error_mssg_flag = error_mssg_flag | 0x0100;
+      error_mssg_flag = error_mssg_flag | 0x0200;
     // printk("Linear Actuator 1: Unable to write");
     if (pwm_motor_write(&(motor[3]), sbus_pwm_interpolation(
                                          channel[7], pwm_range, channel_range)))
-      error_mssg_flag = error_mssg_flag | 0x0200;
+      error_mssg_flag = error_mssg_flag | 0x0400;
     // printk("Linear Actuator 2: Unable to write");
 
     // abox/mini-acctuator/ogger write
     if (pwm_motor_write(&(motor[5]), sbus_pwm_interpolation(
                                          channel[2], pwm_range, channel_range)))
-      error_mssg_flag = error_mssg_flag | 0x0400;
+      error_mssg_flag = error_mssg_flag | 0x0800;
     // printk("Mini-Acc/Ogger: Unable to write");
 
     // // cache-box write
@@ -477,19 +478,19 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
       CONTAINER_OF(imu_work_ptr, struct arm_arg, imu_work_item);
   /* compute pitch and roll from imu data */
   if (process_pitch_roll(imu_lower_joint, &(arm_info->lowerIMU)) == 1)
-    error_mssg_flag = error_mssg_flag | 0x0800;
+    error_mssg_flag = error_mssg_flag | 0x1000;
   // printk("No data from imu_lower_joint: %s\n", imu_lower_joint->name);
   if (process_pitch_roll(imu_upper_joint, &(arm_info->upperIMU)) == 1)
-    error_mssg_flag = error_mssg_flag | 0x1000;
+    error_mssg_flag = error_mssg_flag | 0x2000;
   // printk("No data from imu_upper_joint: %s\n", imu_upper_joint->name);
   if (process_pitch_roll(imu_pitch_roll, &(arm_info->endIMU)) == 1)
-    error_mssg_flag = error_mssg_flag | 0x2000;
+    error_mssg_flag = error_mssg_flag | 0x4000;
   // printk("No data from imu_pitch_roll: %s\n", imu_pitch_roll->name);
 
   /* compute yaw from magnemtometer and imu data */
   if (process_yaw(mm_turn_table, imu_turn_table, &(arm_info->baseLink)) == 1)
-    error_mssg_flag = error_mssg_flag | 0x4000;
-  // printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
+    error_mssg_flag = error_mssg_flag | 0x8000;
+  printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
 
   // printk("IMU: %03.3f %03.3f %03.3f | Target: %03.3f %03.3f",
   //        (180 * arm.lowerIMU.pitch) / M_PI, (180 * arm.upperIMU.pitch) /
