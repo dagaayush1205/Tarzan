@@ -401,12 +401,6 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
                    drive_info->time_last_drive_update);
   drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
 
-  // gripper/bio-arm write
-  if (pwm_motor_write(&(motor[4]), sbus_pwm_interpolation(channel[3], pwm_range,
-                                                          channel_range)))
-    error_mssg_flag = error_mssg_flag | 0x0040;
-  // printk("Gripper/Bio-Arm: Unable to write");
-
   // tilt servo write
   if (pwm_motor_write(
           &(motor[6]),
@@ -424,7 +418,7 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   if (channel[8] < 992) {
     // linear actuator write
     if (pwm_motor_write(&(motor[2]), sbus_pwm_interpolation(
-                                         channel[7], pwm_range, channel_range)))
+                                         channel[2], pwm_range, channel_range)))
       error_mssg_flag = error_mssg_flag | 0x0200;
     // printk("Linear Actuator 1: Unable to write");
     if (pwm_motor_write(&(motor[3]), sbus_pwm_interpolation(
@@ -434,7 +428,7 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 
     // abox/mini-acctuator/ogger write
     if (pwm_motor_write(&(motor[5]), sbus_pwm_interpolation(
-                                         channel[2], pwm_range, channel_range)))
+                                         channel[3], pwm_range, channel_range)))
       error_mssg_flag = error_mssg_flag | 0x0800;
     // printk("Mini-Acc/Ogger: Unable to write");
 
@@ -452,6 +446,13 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
     //   error_mssg_flag = error_mssg_flag|0x0300;
     // printk("Microscope Servo: Unable to write");
   }
+  if (channel[8] >= 992) {
+    // gripper/bio-arm writen (mode 0)
+    if (pwm_motor_write(&(motor[4]), sbus_pwm_interpolation(
+                                         channel[3], pwm_range, channel_range)))
+      error_mssg_flag = error_mssg_flag | 0x0040;
+    // printk("Gripper/Bio-Arm: Unable to write");
+  }
   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
   ch_reader_cnt--;
   if (ch_reader_cnt == 0) {
@@ -467,8 +468,11 @@ void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
   uint64_t drive_timestamp = k_uptime_get();
   drive_info->cmd.angular_z = com.msg_rx.auto_cmd.angular_z;
   drive_info->cmd.linear_x = com.msg_rx.auto_cmd.linear_x;
-  diffdrive_update(drive_info->drive_init, drive_info->cmd,
-                   drive_info->time_last_drive_update);
+  printk("%f | %f\n", drive_info->cmd.linear_x, drive_info->cmd.angular_z);
+  if (diffdrive_update(drive_info->drive_init, drive_info->cmd,
+                       drive_info->time_last_drive_update) == 0) {
+    printk("success\n");
+  }
   drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
 }
 
@@ -490,7 +494,7 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   /* compute yaw from magnemtometer and imu data */
   if (process_yaw(mm_turn_table, imu_turn_table, &(arm_info->baseLink)) == 1)
     error_mssg_flag = error_mssg_flag | 0x8000;
-  printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
+  // printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
 
   // printk("IMU: %03.3f %03.3f %03.3f | Target: %03.3f %03.3f",
   //        (180 * arm.lowerIMU.pitch) / M_PI, (180 * arm.upperIMU.pitch) /
@@ -727,8 +731,8 @@ int main() {
     }
   }
   /* I2C devices ready checks */
-  if (!device_is_ready(imu_turn_table))
-    printk("Lower joint IMU %s: Not ready\n", imu_turn_table->name);
+  // if (!device_is_ready(imu_turn_table))
+  //   printk("Turn Table IMU %s: Not ready\n", imu_turn_table->name);
   if (!device_is_ready(imu_lower_joint))
     printk("Lower joint IMU %s: Not ready\n", imu_lower_joint->name);
   if (!device_is_ready(imu_upper_joint))
@@ -736,9 +740,9 @@ int main() {
   if (!device_is_ready(imu_pitch_roll))
     printk("Pitch Roll IMU %s: Not ready\n", imu_pitch_roll->name);
   if (!device_is_ready(mm_turn_table))
-    printk("Pitch Roll IMU %s: Not ready\n", mm_turn_table->name);
+    printk("Turn Table MM %s: Not ready\n", mm_turn_table->name);
   if (!device_is_ready(mm_rover))
-    printk("Pitch Roll IMU %s: Not ready\n", mm_rover->name);
+    printk("Rover MM %s: Not ready\n", mm_rover->name);
 
   /* Calibrating IMUs */
   printk("Calibrating IMUs\n");
