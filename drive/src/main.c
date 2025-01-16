@@ -462,10 +462,8 @@ void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
   uint64_t drive_timestamp = k_uptime_get();
   drive_info->cmd.angular_z = com.msg_rx.auto_cmd.angular_z;
   drive_info->cmd.linear_x = com.msg_rx.auto_cmd.linear_x;
-  printk("%f | %f\n", drive_info->cmd.linear_x, drive_info->cmd.angular_z);
   if (diffdrive_update(drive_info->drive_init, drive_info->cmd,
                        drive_info->time_last_drive_update) == 0) {
-    printk("success\n");
   }
   drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
 }
