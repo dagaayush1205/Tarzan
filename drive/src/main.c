@@ -414,8 +414,12 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
     error_mssg_flag = error_mssg_flag | 0x0100;
   // printk("Pan Servo: Unable to write");
 
-  /* checking mode */
+  /* mode 1 */
   if (channel[8] < 992) {
+    // writing neutral to gripper
+    if (pwm_motor_write(&(motor[4]), 1500000))
+      error_mssg_flag = error_mssg_flag | 0x0040;
+
     // linear actuator write
     if (pwm_motor_write(&(motor[2]), sbus_pwm_interpolation(
                                          channel[2], pwm_range, channel_range)))
@@ -431,23 +435,13 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
                                          channel[3], pwm_range, channel_range)))
       error_mssg_flag = error_mssg_flag | 0x0800;
     // printk("Mini-Acc/Ogger: Unable to write");
-
-    // // cache-box write
-    // if (pwm_motor_write(&(motor[8]), sbus_pwm_interpolation(
-    //                                      channel[6], pwm_range,
-    //                                      channel_range)))
-    //   error_mssg_flag = error_mssg_flag|0x0200;
-    // printk("Cache-Box Servo: Unable to write");
-
-    // // microscope servo write
-    // if (pwm_motor_write(&(motor[9]), sbus_pwm_interpolation(
-    //                                      channel[7], pwm_range,
-    //                                      channel_range)))
-    //   error_mssg_flag = error_mssg_flag|0x0300;
-    // printk("Microscope Servo: Unable to write");
   }
+  /* mode 0 (gripper/bio-arm writen) */
   if (channel[8] >= 992) {
-    // gripper/bio-arm writen (mode 0)
+    // writing neutral to abox/mini acc
+    if (pwm_motor_write(&(motor[5]), 1500000))
+      error_mssg_flag = error_mssg_flag | 0x0800;
+
     if (pwm_motor_write(&(motor[4]), sbus_pwm_interpolation(
                                          channel[3], pwm_range, channel_range)))
       error_mssg_flag = error_mssg_flag | 0x0040;
