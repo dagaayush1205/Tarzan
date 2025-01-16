@@ -302,7 +302,7 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   // printk("Linear Actuator 2: Unable to write");
 
   // arm acctuator write
-  if (pwm_motor_write(&(motor[5]), sbus_pwm_interpolation(channel[5], pwm_range,
+  if (pwm_motor_write(&(motor[5]), sbus_pwm_interpolation(channel[3], pwm_range,
                                                           channel_range)))
     error_mssg_flag = error_mssg_flag | 0x0800;
   // printk("Mini-Acc/Ogger: Unable to write");
@@ -310,7 +310,7 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   // cache-box write
   if (pwm_motor_write(
           &(motor[8]),
-          sbus_pwm_interpolation(channel[6], servo_pwm_range, channel_range)))
+          sbus_pwm_interpolation(channel[8], servo_pwm_range, channel_range)))
     error_mssg_flag = error_mssg_flag | 0x1000;
   // printk("Cache-Box Servo: Unable to write");
 
@@ -322,7 +322,7 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   // printk("Microscope Servo: Unable to write");
 
   // ogger write
-  if (pwm_motor_write(&(motor[4]), sbus_pwm_interpolation(channel[3], pwm_range,
+  if (pwm_motor_write(&(motor[4]), sbus_pwm_interpolation(channel[5], pwm_range,
                                                           channel_range)))
     error_mssg_flag = error_mssg_flag | 0x4000;
   // printk("Gripper/Bio-Arm: Unable to write");
@@ -524,5 +524,4 @@ int main() {
   /* enabling stepper|mssg timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
   k_timer_start(&mssg_timer, K_MSEC(10), K_SECONDS(1));
-  k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
 }
