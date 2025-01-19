@@ -287,8 +287,8 @@ int main() {
 
   while (true) {
     k_msgq_get(&msgq_rx, &com.msg_rx, K_MSEC(4));
-    if (check_crc(&com.msg_rx) != 0)
-      continue;
+    // if (check_crc(&com.msg_rx) != 0)
+    //   continue;
     drive.cmd.linear_x = com.msg_rx.auto_cmd.linear_x;
     drive.cmd.angular_z = com.msg_rx.auto_cmd.angular_z;
     uint64_t drive_timestamp = k_uptime_get();
