@@ -545,7 +545,7 @@ void arm_channel_work_handler(struct k_work *work_ptr) {
     }
   }
   for (int i = 0; i < 5; i++) {
-    if (arm_channels[i] > 992) {
+    if (arm_channels[i] > 1185) {
       arm_info->dir[i] = HIGH_PULSE;
     } else if (arm_channels[i] < 800) {
       arm_info->dir[i] = LOW_PULSE;
