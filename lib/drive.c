@@ -44,7 +44,7 @@ uint32_t sbus_pwm_interpolation(uint16_t channel, uint32_t *pwm_range,
   if (channel < channel_range[0])
     return pwm_range[0];
 
-  if (channel < 1005 && channel > 995) // deadzone
+  if (channel < 1050 && channel > 950) // deadzone
     return 1500000;                    // neutral
 
   float dchannel = channel_range[1] - channel_range[0];
