@@ -200,6 +200,11 @@ int feedback_callback(float *feedback_buffer, int buffer_len,
   return 0;
 }
 
+void mssg_timer_handler(struct k_timer *mssg_timer_ptr) {
+  latte_panda_tx_work_handler();
+}
+K_TIMER_DEFINE(mssg_timer, mssg_timer_handler, NULL);
+
 int main() {
 
   printk("Tarzan version %s\nFile: %s\n", TARZAN_GIT_VERSION, __FILE__);
@@ -285,6 +290,7 @@ int main() {
   /* enable interrupt to receive cobs data */
   uart_irq_rx_enable(latte_panda_uart);
 
+  k_timer_start(&mssg_timer, K_MSEC(10), K_SECONDS(1));
   while (true) {
     k_msgq_get(&msgq_rx, &com.msg_rx, K_MSEC(4));
     // if (check_crc(&com.msg_rx) != 0)
@@ -294,7 +300,6 @@ int main() {
     uint64_t drive_timestamp = k_uptime_get();
     diffdrive_update(drive.drive_init, drive.cmd, drive.time_last_drive_update);
     drive.time_last_drive_update = k_uptime_get() - drive_timestamp;
-    latte_panda_tx_work_handler();
     k_sleep(K_USEC(100));
   }
 }
