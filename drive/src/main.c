@@ -142,8 +142,8 @@ uint8_t packet[25];                // to store sbus packets
 uint8_t gps_mssg[100];             // to store gps mssg
 int sbus_bytes_read;               // to store number of sbus bytes read
 int gps_bytes_read;                // to store number of gps bytes read
-uint16_t error_mssg_flag = 0x0001; // to store error status byte
-const int INV_MSG_LEN = sizeof(struct cmd_msg) + 2; // len of inverse mssg
+uint16_t error_mssg_flag = 0x0000; // to store error status byte
+const int CMD_MSG_LEN = sizeof(struct cmd_msg) + 2; // len of inverse mssg
 const int BS_MSG_LEN =
     sizeof(struct base_station_msg) + 2; // len of base station mssg
 uint8_t rx_buf[sizeof(struct cmd_msg) + 2] = {0};
@@ -216,7 +216,7 @@ void cobs_cb(const struct device *dev, void *user_data) {
   while (uart_fifo_read(dev, &c, 1) == 1) {
     if (c == 0x00 && cobs_bytes_read > 0) {
       rx_buf[cobs_bytes_read] = 0;
-      if (cobs_bytes_read != (INV_MSG_LEN - 1)) {
+      if (cobs_bytes_read != (CMD_MSG_LEN - 1)) {
         cobs_bytes_read = 0;
         continue;
       }
@@ -255,13 +255,13 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
 }
 /* received cobs message work handler */
 void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
-  uint8_t buf[INV_MSG_LEN];
+  uint8_t buf[CMD_MSG_LEN];
   struct com_arg *com_info =
       CONTAINER_OF(cobs_rx_work_ptr, struct com_arg, cobs_rx_work_item);
   k_msgq_get(&msgq_rx, buf, K_MSEC(4));
   cobs_decode_result result =
       cobs_decode((void *)&(com_info->msg_rx), sizeof(com_info->msg_rx), buf,
-                  INV_MSG_LEN - 1);
+                  CMD_MSG_LEN - 1);
   if (result.status != COBS_DECODE_OK) {
     error_mssg_flag = error_mssg_flag | 0x0002;
     // printk("COBS Decode Failed %d\n", result.status);
@@ -301,7 +301,7 @@ void telemetry_tx_work_handler(struct k_work *telemetry_tx_work_ptr) {
   com_info->inv_msg_tx.type = INVERSE;
 
   cobs_encode_result result =
-      cobs_encode(inv_tx_buf, INV_MSG_LEN, (void *)&com_info->inv_msg_tx,
+      cobs_encode(inv_tx_buf, CMD_MSG_LEN, (void *)&com_info->inv_msg_tx,
                   sizeof(struct cmd_msg));
 
   if (result.status != COBS_ENCODE_OK) {
@@ -309,8 +309,8 @@ void telemetry_tx_work_handler(struct k_work *telemetry_tx_work_ptr) {
     // printk("COBS Encoded Failed %d\n", result.status);
     return;
   }
-  inv_tx_buf[INV_MSG_LEN - 1] = 0x00;
-  for (int i = 0; i < INV_MSG_LEN; i++) {
+  inv_tx_buf[CMD_MSG_LEN - 1] = 0x00;
+  for (int i = 0; i < CMD_MSG_LEN; i++) {
     uart_poll_out(telemetry_uart, inv_tx_buf[i]);
   }
 }
@@ -472,29 +472,30 @@ void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
 void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   struct arm_arg *arm_info =
       CONTAINER_OF(imu_work_ptr, struct arm_arg, imu_work_item);
+
   /* compute pitch and roll from imu data */
-  if (process_pitch_roll(imu_lower_joint, &(arm_info->lowerIMU)) == 1)
+  if (!process_pitch_roll(imu_lower_joint, &(arm_info->lowerIMU)))
     error_mssg_flag = error_mssg_flag | 0x1000;
   // printk("No data from imu_lower_joint: %s\n", imu_lower_joint->name);
-  if (process_pitch_roll(imu_upper_joint, &(arm_info->upperIMU)) == 1)
+
+  if (!process_pitch_roll(imu_upper_joint, &(arm_info->upperIMU)))
     error_mssg_flag = error_mssg_flag | 0x2000;
   // printk("No data from imu_upper_joint: %s\n", imu_upper_joint->name);
-  if (process_pitch_roll(imu_pitch_roll, &(arm_info->endIMU)) == 1)
+
+  if (!process_pitch_roll(imu_pitch_roll, &(arm_info->endIMU)))
     error_mssg_flag = error_mssg_flag | 0x4000;
   // printk("No data from imu_pitch_roll: %s\n", imu_pitch_roll->name);
 
   /* compute yaw from magnemtometer and imu data */
-  if (process_yaw(mm_turn_table, imu_turn_table, &(arm_info->baseLink)) == 1)
+  if (!process_yaw(mm_turn_table, &(arm_info->baseLink)))
+    error_mssg_flag = error_mssg_flag | 0x8000;
+  // printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
+  if (!process_yaw(mm_rover, &(arm_info->rover)))
     error_mssg_flag = error_mssg_flag | 0x8000;
   // printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
 
-  // printk("IMU: %03.3f %03.3f %03.3f | Target: %03.3f %03.3f",
-  //        (180 * arm.lowerIMU.pitch) / M_PI, (180 * arm.upperIMU.pitch) /
-  //        M_PI, (180 * arm.endIMU.pitch) / M_PI, (180 *
-  //        com.msg_rx.first_link) / M_PI, (180 * (com.msg_rx.second_link -
-  //        com.msg_rx.first_link)) / M_PI);
-
-  arm.dir[0] = update_proportional(com.msg_rx.inv.turn_table, 0);
+  arm.dir[0] = update_proportional(com.msg_rx.inv.turn_table,
+                                   (arm.baseLink.yaw - arm.rover.yaw));
   arm.dir[1] =
       update_proportional(com.msg_rx.inv.first_link, -1 * arm.lowerIMU.pitch);
   arm.dir[2] = update_proportional((com.msg_rx.inv.second_link) -
@@ -502,9 +503,6 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
                                    arm.upperIMU.pitch);
   arm.dir[3] = update_proportional((com.msg_rx.inv.pitch), arm.endIMU.pitch);
   arm.dir[4] = update_proportional(com.msg_rx.inv.roll, arm.endIMU.roll);
-
-  // printk(" | Move: %d%d %d%d\n", arm.dir[1] >> 1, arm.dir[1]|0b01,
-  //        arm.dir[2] >> 1, arm.dir[2]|0b01);
 
   k_work_submit_to_queue(&work_q, &(com.telemetry_tx_work_item));
 }
@@ -569,7 +567,8 @@ void arm_stepper_work_handler(enum StepperDirection *dir, enum msg_type type) {
 
 /* timer to write to stepper motors*/
 void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
-  arm_stepper_work_handler(arm.dir, com.msg_rx.type);
+  if (com.msg_rx.type != INVERSE)
+    arm_stepper_work_handler(arm.dir, com.msg_rx.type);
 }
 K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
 /* timer to write mssg to latte panda */
