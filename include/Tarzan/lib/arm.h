@@ -20,12 +20,9 @@ enum StepperDirection {
 extern struct quaternion q_est;
 /* store imu related data */
 struct joint {
-  double accel[3];
-  double gyro[3];
-  double mag[3];
   double pitch;
   double roll;
-  float yaw;
+  double yaw;
   uint64_t prev_time;
   double gyro_offset[3];
 };
