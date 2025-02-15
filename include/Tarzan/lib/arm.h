@@ -25,6 +25,7 @@ struct joint {
   double mag[3];
   double pitch;
   double roll;
+  float yaw;
   uint64_t prev_time;
   double gyro_offset[3];
 };
@@ -49,8 +50,7 @@ int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos);
 
 int process_pitch_roll(const struct device *dev, struct joint *IMU);
 
-int process_yaw(const struct device *mm_dev, const struct device *imu_dev,
-                struct joint *data);
+int process_yaw(const struct device *dev, struct joint *MAG);
 
 int calibration(const struct device *dev, struct joint *IMU);
 

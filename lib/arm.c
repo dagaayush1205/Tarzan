@@ -130,31 +130,33 @@ enum StepperDirection update_proportional(double target_angel,
   else // target_angel<current_angel
     return LOW_PULSE;
 }
-/* magwick filter to compute yaw
+/* compute yaw using magnetometer data
  * param:
- * mm_dev - magnetometer device
- * imu_dev - imu device
- * data - pointer to struct joint
+ * dev - magnetometer device
+ * MAG - pointer to struct joint
  * returns: 0 if successfull*/
-int process_yaw(const struct device *mm_dev, const struct device *imu_dev,
-                struct joint *data) {
+int process_yaw(const struct device *dev, struct joint *MAG) {
 
-  struct sensor_value accel[3], gyro[3], mag[3];
+  const struct sensor_value mag[3];
 
-  int mm_rc = sensor_sample_fetch(mm_dev);
-  int imu_rc = sensor_sample_fetch(imu_dev);
+  int rc = sensor_sample_fetch(dev);
 
-  if (imu_rc == 0)
-    imu_rc = sensor_channel_get(imu_dev, SENSOR_CHAN_ACCEL_XYZ, accel);
-  if (imu_rc == 0)
-    imu_rc = sensor_channel_get(imu_dev, SENSOR_CHAN_GYRO_XYZ, gyro);
-  if (mm_rc == 0)
-    mm_rc = sensor_channel_get(mm_dev, SENSOR_CHAN_MAGN_XYZ, mag);
-
-  else {
+  if (rc == 0) {
+    rc = sensor_channel_get(dev, SENSOR_CHAN_MAGN_XYZ, mag);
+    if (rc == 0) {
+      // printk("%03.3f %03.3f %03.3f\n", sensor_value_to_double(&mag[0]),
+      //        sensor_value_to_double(&mag[1]),
+      //        sensor_value_to_double(&mag[2]));
+      MAG->yaw = atan2(sensor_value_to_double(&mag[0]),
+                       sensor_value_to_double(&mag[1])) -
+                 M_PI / 2;
+      if (MAG->yaw < 0)
+        MAG->yaw += 2 * M_PI;
+      if (MAG->yaw > 2 * M_PI)
+        MAG->yaw -= 2 * M_PI;
+    }
+  } else
     return 1;
-  }
-
   return 0;
 }
 
