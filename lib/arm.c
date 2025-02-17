@@ -76,6 +76,7 @@ int process_pitch_roll(const struct device *dev, struct joint *IMU) {
 
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
+  double a[3], g[3];
 
   uint64_t current_time = k_uptime_get();
 
@@ -88,27 +89,20 @@ int process_pitch_roll(const struct device *dev, struct joint *IMU) {
   if (rc == 0)
     rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
 
-  IMU->prev_time = current_time;
-  IMU->accel[0] = sensor_value_to_double(&accel[0]);
-  IMU->accel[1] = sensor_value_to_double(&accel[1]);
-  IMU->accel[2] = sensor_value_to_double(&accel[2]);
-  IMU->gyro[0] = sensor_value_to_double(&gyro[0]) - IMU->gyro_offset[0];
-  IMU->gyro[1] = sensor_value_to_double(&gyro[1]) - IMU->gyro_offset[1];
-  IMU->gyro[2] = sensor_value_to_double(&gyro[2]) - IMU->gyro_offset[2];
-
-  // printk("%03.3f %03.3f %03.3f | %03.3f %03.3f %03.3f\n", IMU->accel[0],
-  // IMU->accel[1], IMU->accel[2], IMU->gyro[0], IMU->gyro[1], IMU->gyro[2]);
-
   if (rc == 0) {
 
-    double pitch_acc = (atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) +
-                                                       pow(IMU->accel[2], 2))));
-    double roll_acc = (atan2(-1 * IMU->accel[1], sqrt(pow(IMU->accel[2], 2) +
-                                                      pow(IMU->accel[0], 2))));
-    IMU->pitch =
-        TAU * (IMU->pitch + (IMU->gyro[1]) * (dt)) + (1 - TAU) * pitch_acc;
-    IMU->roll =
-        TAU * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - TAU) * roll_acc;
+    IMU->prev_time = current_time;
+    a[0] = sensor_value_to_double(&accel[0]);
+    a[1] = sensor_value_to_double(&accel[1]);
+    a[2] = sensor_value_to_double(&accel[2]);
+    g[0] = sensor_value_to_double(&gyro[0]) - IMU->gyro_offset[0];
+    g[1] = sensor_value_to_double(&gyro[1]) - IMU->gyro_offset[1];
+    g[2] = sensor_value_to_double(&gyro[2]) - IMU->gyro_offset[2];
+
+    double pitch_acc = (atan2(-1 * a[0], sqrt(pow(a[1], 2) + pow(a[2], 2))));
+    double roll_acc = (atan2(-1 * a[1], sqrt(pow(a[2], 2) + pow(a[0], 2))));
+    IMU->pitch = TAU * (IMU->pitch + (g[1]) * (dt)) + (1 - TAU) * pitch_acc;
+    IMU->roll = TAU * (IMU->roll + (g[2]) * (dt)) + (1 - TAU) * roll_acc;
   } else {
     return 1;
   }
