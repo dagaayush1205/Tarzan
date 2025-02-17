@@ -617,8 +617,7 @@ int main() {
   drive.drive_init = diffdrive_init(&(drive.drive_config), feedback_callback,
                                     velocity_callback);
   /* initialize imu joints */
-  struct joint initialize_imu = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, 0,
-                                 0,         0,         {0, 0, 0}};
+  struct joint initialize_imu = {0, 0, 0, 0, {0, 0, 0}};
   arm.upperIMU = initialize_imu;
   arm.lowerIMU = initialize_imu;
   arm.endIMU = initialize_imu;
