@@ -23,7 +23,7 @@ west update
 pip install -r zephyr/scripts/requirements-base.txt
 source zephyr/zephyr-env.sh
 ```
-4. If everythin is installed correctly you can build src code
+4. If everything is installed correctly you can build src code
 ```
-west build -p=always -o=-j8 -b nucleo_h7a3ziq Tarzan/drive
+west build -p=always -o=-j8 -b nucleo_h7a3zi_q Tarzan/drive
 ```
