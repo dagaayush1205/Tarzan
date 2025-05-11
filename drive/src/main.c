@@ -20,6 +20,7 @@
 #include <Tarzan/lib/cobs.h>
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
+#include <Tarzan/lib/diffdrive.h>
 
 #define STACK_SIZE 4096   // work_q thread stack size
 #define PRIORITY 2        // work_q thread priority
@@ -397,7 +398,7 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
       channel[0], angular_velocity_range, channel_range);
   drive_info->cmd.linear_x = sbus_velocity_interpolation(
       channel[1], linear_velocity_range, channel_range);
-  diffdrive_update(drive_info->drive_init, drive_info->cmd,
+  diff_kine(drive_info->drive_init, drive_info->cmd,
                    drive_info->time_last_drive_update);
   drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
 
@@ -462,7 +463,7 @@ void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
   uint64_t drive_timestamp = k_uptime_get();
   drive_info->cmd.angular_z = com.msg_rx.auto_cmd.angular_z;
   drive_info->cmd.linear_x = com.msg_rx.auto_cmd.linear_x;
-  if (diffdrive_update(drive_info->drive_init, drive_info->cmd,
+  if (diff_kine(drive_info->drive_init, drive_info->cmd,
                        drive_info->time_last_drive_update) == 0) {
   }
   drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
