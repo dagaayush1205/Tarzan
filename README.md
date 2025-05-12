@@ -83,7 +83,7 @@ source .venv/bin/activate
 ```
 3. Init the workspace by pulling the repo using west
 ```
-west init -m https://github.com/dagaayush2105/Tarzan 
+west init -m https://github.com/dagaayush1205/Tarzan 
 west config --global update.narrow true
 west update
 pip install -r zephyr/scripts/requirements-base.txt
