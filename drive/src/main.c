@@ -36,7 +36,12 @@ static const struct device *const telemetry_uart =
 static const struct device *const latte_panda_uart =
     DEVICE_DT_GET(DT_ALIAS(latte_panda_uart));
 /* gps uart */
-static const struct device *const gps_uart = DEVICE_DT_GET(DT_ALIAS(gps_uart));
+static const struct device *const gps_uart = 
+    DEVICE_DT_GET(DT_ALIAS(gps_uart));
+/* imu uart */
+static const struct device *const imu_uart =
+    DEVICE_DT_GET(DT_ALIAS(imu_uart));
+
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id)                                            \
   {.dev_spec = PWM_DT_SPEC_GET(pwm_dev_id),                                    \
@@ -44,6 +49,7 @@ static const struct device *const gps_uart = DEVICE_DT_GET(DT_ALIAS(gps_uart));
    .max_pulse = DT_PROP(pwm_dev_id, max_pulse)},
 struct pwm_motor motor[10] = {
     DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
+
 /* DT spec for stepper */
 const struct stepper_motor stepper[5] = {
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), dir_gpios),
@@ -56,13 +62,10 @@ const struct stepper_motor stepper[5] = {
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor4), step_gpios)},
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), dir_gpios),
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), step_gpios)}};
+
 /*DT spec for I2C devices */
-const struct device *imu_turn_table = DEVICE_DT_GET(DT_ALIAS(imu_turn_table));
-const struct device *imu_lower_joint = DEVICE_DT_GET(DT_ALIAS(imu_lower_joint));
-const struct device *imu_upper_joint = DEVICE_DT_GET(DT_ALIAS(imu_pitch_roll));
-const struct device *imu_pitch_roll = DEVICE_DT_GET(DT_ALIAS(imu_upper_joint));
-const struct device *mm_turn_table = DEVICE_DT_GET(DT_ALIAS(mm_turn_table));
-const struct device *mm_rover = DEVICE_DT_GET(DT_ALIAS(mm_rover));
+const struct device *imu_rover = DEVICE_DT_GET(DT_ALIAS(imu_rover));
+
 /* DT spec for leds */
 static const struct gpio_dt_spec init_led =
     GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
@@ -77,6 +80,7 @@ struct cmd_msg {
   enum msg_type type;
   uint32_t crc;
 };
+
 /* msg struct for com with base station */
 struct base_station_msg {
   char gps_msg[100];
@@ -96,6 +100,7 @@ K_MSGQ_DEFINE(gps_msgq, sizeof(uint8_t) * 100, 10, 1);
 
 /* workq dedicated thread */
 K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
+
 /* semaphore for channels */
 struct k_sem ch_sem;
 /* mutex for channel reader count */
@@ -106,6 +111,7 @@ struct k_mutex ch_writer_mutex;
 struct k_work_q work_q;
 /* sbus work item */
 struct k_work sbus_work_item;
+
 /* struct for drive variables */
 struct drive_arg {
   struct k_work drive_work_item;      // drive work item
@@ -115,6 +121,7 @@ struct drive_arg {
   struct DiffDrive *drive_init;
   uint64_t time_last_drive_update;
 } drive;
+
 /* struct for arm variables */
 struct arm_arg {
   enum StepperDirection dir[5];
@@ -127,6 +134,7 @@ struct arm_arg {
   struct joint endIMU;
   struct joint rover;
 } arm;
+
 /* struct for communication with latte panda*/
 struct com_arg {
   struct k_work cobs_rx_work_item;
@@ -178,6 +186,7 @@ void sbus_cb(const struct device *dev, void *user_data) {
     sbus_bytes_read = 0;
   }
 }
+
 /* interrupt to store gps data */
 void gps_cb(const struct device *dev, void *user_data) {
   ARG_UNUSED(user_data);
@@ -205,6 +214,7 @@ void gps_cb(const struct device *dev, void *user_data) {
     gps_bytes_read = 0;
   }
 }
+
 void cobs_cb(const struct device *dev, void *user_data) {
   ARG_UNUSED(user_data);
   uint8_t c;
@@ -224,11 +234,12 @@ void cobs_cb(const struct device *dev, void *user_data) {
       k_msgq_put(&msgq_rx, rx_buf, K_NO_WAIT);
       k_work_submit_to_queue(&work_q, &com.cobs_rx_work_item);
       cobs_bytes_read = 0;
-    } else if (cobs_bytes_read < sizeof(rx_buf)) {
+    } else if gps_uart(cobs_bytes_read < sizeof(rx_buf)) {
       rx_buf[cobs_bytes_read++] = c;
     }
   }
 }
+
 /* work handler to form sbus packet and return sbus channels */
 void sbus_work_handler(struct k_work *sbus_work_ptr) {
   uint8_t buffer[25] = {0};
@@ -254,6 +265,7 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
     }
   }
 }
+
 /* received cobs message work handler */
 void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
   uint8_t buf[CMD_MSG_LEN];
@@ -276,7 +288,7 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
   if (com_info->msg_rx.type == INVERSE) {
     k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
   }
-  if (com_info->msg_rx.type == AUTONOMOUS) {
+  else if (com_info->msg_rx.type == AUTONOMOUS) {
     k_work_submit_to_queue(&work_q, &(drive.auto_drive_work_item));
   }
 }
@@ -315,6 +327,7 @@ void telemetry_tx_work_handler(struct k_work *telemetry_tx_work_ptr) {
     uart_poll_out(telemetry_uart, inv_tx_buf[i]);
   }
 }
+
 void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
   struct com_arg *com_info = CONTAINER_OF(
       latte_panda_tx_work_ptr, struct com_arg, latte_panda_tx_work_item);
@@ -337,6 +350,7 @@ void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
   }
   error_mssg_flag = 0x0000;
 }
+
 /* check if received cobs message is valid,
  * ret 0 if successfull */
 int check_crc(struct cmd_msg *msg) {
@@ -491,7 +505,7 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   if (!process_yaw(mm_turn_table, &(arm_info->baseLink)))
     error_mssg_flag = error_mssg_flag | 0x8000;
   // printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
-  if (!process_yaw(mm_rover, &(arm_info->rover)))
+  if (!process_yaw(mm_rogps_uartver, &(arm_info->rover)))
     error_mssg_flag = error_mssg_flag | 0x8000;
   // printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
 
@@ -559,8 +573,9 @@ void arm_channel_work_handler(struct k_work *work_ptr) {
   }
   k_mutex_unlock(&ch_reader_cnt_mutex);
 }
+
 /* work handler for stepper motor write*/
-void arm_stepper_work_handler(enum StepperDirection *dir, enum msg_type type) {
+void arm_stepper_work_handler(enum StepperDirection *dir) {
   for (int i = 0; i < 5; i++) {
     arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
   }
@@ -568,10 +583,10 @@ void arm_stepper_work_handler(enum StepperDirection *dir, enum msg_type type) {
 
 /* timer to write to stepper motors*/
 void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
-  if (com.msg_rx.type != INVERSE)
-    arm_stepper_work_handler(arm.dir, com.msg_rx.type);
+    arm_stepper_work_handler(arm.dir);
 }
 K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
+
 /* timer to write mssg to latte panda */
 void mssg_timer_handler(struct k_timer *mssg_timer_ptr) {
   k_work_submit_to_queue(&work_q, &(com.latte_panda_tx_work_item));
@@ -618,10 +633,10 @@ int main() {
   drive.drive_init = diffdrive_init(&(drive.drive_config), feedback_callback,
                                     velocity_callback);
   /* initialize imu joints */
-  struct joint initialize_imu = {0, 0, 0, 0, {0, 0, 0}};
-  arm.upperIMU = initialize_imu;
-  arm.lowerIMU = initialize_imu;
-  arm.endIMU = initialize_imu;
+  // struct joint initialize_imu = {0, 0, 0, 0, {0, 0, 0}};
+  // arm.upperIMU = initialize_imu;
+  // arm.lowerIMU = initialize_imu;
+  // arm.endIMU = initialize_imu;
 
   /* sbus uart ready check */
   if (!device_is_ready(sbus_uart)) {
@@ -639,15 +654,15 @@ int main() {
   if (!device_is_ready(latte_panda_uart)) {
     printk("LATTE PANDA UART device not ready");
   }
+  /* imu uart ready check */
+  if (!device_is_ready(imu_uart)) {
+    printk("IMU UART device not ready");
+  }
+  /* enable usb for latte panda com */
   if (usb_enable(NULL)) {
     return 0;
   }
-  // /* get uart line control */
-  // while (!dtr) {
-  //   printk("error\n");
-  //   uart_line_ctrl_get(latte_panda_uart, UART_LINE_CTRL_DTR, &dtr);
-  //   k_sleep(K_MSEC(100));
-  // }
+
   /* set sbus uart for interrupt */
   err = uart_irq_callback_user_data_set(sbus_uart, sbus_cb, NULL);
   if (err < 0) {
@@ -659,6 +674,7 @@ int main() {
       printk("Error setting UART callback: %d", err);
     }
   }
+
   /* set gps uart for interrupt */
   err = uart_irq_callback_user_data_set(gps_uart, gps_cb, NULL);
   if (err < 0) {
@@ -670,6 +686,7 @@ int main() {
       printk("Error setting UART callback: %d", err);
     }
   }
+
   /* set telemtry uart for interrupt */
   err = uart_irq_callback_user_data_set(telemetry_uart, cobs_cb, NULL);
   if (err < 0) {
@@ -681,6 +698,7 @@ int main() {
       printk("Error setting UART callback: %d", err);
     }
   }
+
   /* set latte panda uart for interrupt */
   err = uart_irq_callback_user_data_set(latte_panda_uart, cobs_cb, NULL);
   if (err < 0) {
@@ -692,6 +710,19 @@ int main() {
       printk("Error setting UART callback: %d", err);
     }
   }
+
+  /* set imu uart for interrupt */
+  err = uart_irq_callback_user_data_set(imu_uart, cobs_cb, NULL);
+  if (err < 0) {
+    if (err == -ENOTSUP) {
+      printk("Interrupt-driven UART API support not enabled");
+    } else if (err == -ENOSYS) {
+      printk("UART device does not support interrupt-driven API");
+    } else {
+      printk("Error setting UART callback: %d", err);
+    }
+  }
+
   /* pwm ready check */
   for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) {
     if (!pwm_is_ready_dt(&(motor[i].dev_spec))) {
@@ -703,6 +734,7 @@ int main() {
       printk("Unable to write pwm pulse to PWM Motor : %d\n", i);
     }
   }
+
   /* stepper motor ready check */
   for (size_t i = 0U; i < 5; i++) {
     if (!gpio_is_ready_dt(&stepper[i].dir)) {
@@ -712,6 +744,7 @@ int main() {
       printk("Stepper Motor %d: Dir %d is not ready", i, stepper[i].step.pin);
     }
   }
+
   /* configure stepper gpio for output */
   for (size_t i = 0U; i < 5; i++) {
     if (gpio_pin_configure_dt(&(stepper[i].dir), GPIO_OUTPUT_INACTIVE)) {
@@ -722,31 +755,15 @@ int main() {
     }
   }
   /* I2C devices ready checks */
-  // if (!device_is_ready(imu_turn_table))
-  //   printk("Turn Table IMU %s: Not ready\n", imu_turn_table->name);
-  if (!device_is_ready(imu_lower_joint))
-    printk("Lower joint IMU %s: Not ready\n", imu_lower_joint->name);
-  if (!device_is_ready(imu_upper_joint))
-    printk("Upper joint IMU %s: Not ready\n", imu_upper_joint->name);
-  if (!device_is_ready(imu_pitch_roll))
-    printk("Pitch Roll IMU %s: Not ready\n", imu_pitch_roll->name);
-  if (!device_is_ready(mm_turn_table))
-    printk("Turn Table MM %s: Not ready\n", mm_turn_table->name);
-  if (!device_is_ready(mm_rover))
-    printk("Rover MM %s: Not ready\n", mm_rover->name);
+  /* if (!device_is_ready(rover_imu))
+    printk("Rover MM %s: Not ready\n", mm_rover->name); */
 
   /* Calibrating IMUs */
-  printk("Calibrating IMUs\n");
+  /* printk("Calibrating IMUs\n");
   if (calibration(imu_lower_joint, &arm.lowerIMU)) {
     printk("Lower joint IMU %s: Calibration failed\n", imu_lower_joint->name);
   }
-  if (calibration(imu_upper_joint, &arm.upperIMU)) {
-    printk("Upper joint IMU %s: Calibration failed\n", imu_upper_joint->name);
-  }
-  if (calibration(imu_pitch_roll, &arm.endIMU)) {
-    printk("Pitch Roll IMU %s: Calibration failed\n", imu_pitch_roll->name);
-  }
-  printk("Calibration Finished\n");
+  printk("Calibration Finished\n"); */
 
   /* led ready checks */
   if (!gpio_is_ready_dt(&init_led)) {
@@ -770,12 +787,15 @@ int main() {
   /* start running work queue */
   k_work_queue_start(&work_q, stack_area, K_THREAD_STACK_SIZEOF(stack_area),
                      PRIORITY, NULL);
+
   /* enable interrupt to receive sbus data */
   uart_irq_rx_enable(sbus_uart);
   /* enable interrupt to receive cobs data */
   uart_irq_rx_enable(latte_panda_uart);
   /* enable interrupt to receive gps data */
   uart_irq_rx_enable(gps_uart);
+  /* enable interrupt to receive imu data */
+  uart_irq_rx_enable(imu_uart);
 
   /* enabling stepper|mssg timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
