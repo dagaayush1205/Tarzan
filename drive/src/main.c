@@ -20,7 +20,6 @@
 #include <Tarzan/lib/cobs.h>
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
-#include <Tarzan/lib/diffdrive.h>
 
 #define STACK_SIZE 4096   // work_q thread stack size
 #define PRIORITY 2        // work_q thread priority
@@ -47,7 +46,7 @@ static const struct device *const imu_uart =
   {.dev_spec = PWM_DT_SPEC_GET(pwm_dev_id),                                    \
    .min_pulse = DT_PROP(pwm_dev_id, min_pulse),                                \
    .max_pulse = DT_PROP(pwm_dev_id, max_pulse)},
-struct pwm_motor motor[10] = {
+struct pwm_motor motor[12] = {
     DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
 
 /* DT spec for stepper */
@@ -77,6 +76,7 @@ const struct pwm_dt_spec error_led = PWM_DT_SPEC_GET(DT_ALIAS(pwm_led0));
 struct cmd_msg {
   struct DiffDriveTwist auto_cmd;
   struct inverse_msg inv;
+  struct imu_msg imu; 
   enum msg_type type;
   uint32_t crc;
 };
@@ -107,6 +107,8 @@ struct k_sem ch_sem;
 struct k_mutex ch_reader_cnt_mutex;
 /* mutex for channel readers to wait for writer */
 struct k_mutex ch_writer_mutex;
+/* mutex for arm joints imu */
+struct k_mutex arm_imu_mutex; 
 /* msgq to store sbus data */
 struct k_work_q work_q;
 /* sbus work item */
@@ -127,6 +129,7 @@ struct arm_arg {
   enum StepperDirection dir[5];
   int pos[5];
   struct k_work imu_work_item;
+  struct k_work imu_data_work_item; 
   struct k_work channel_work_item;
   struct joint baseLink;
   struct joint lowerIMU;
@@ -234,7 +237,7 @@ void cobs_cb(const struct device *dev, void *user_data) {
       k_msgq_put(&msgq_rx, rx_buf, K_NO_WAIT);
       k_work_submit_to_queue(&work_q, &com.cobs_rx_work_item);
       cobs_bytes_read = 0;
-    } else if gps_uart(cobs_bytes_read < sizeof(rx_buf)) {
+    } else if(cobs_bytes_read < sizeof(rx_buf)) {
       rx_buf[cobs_bytes_read++] = c;
     }
   }
@@ -290,6 +293,9 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
   }
   else if (com_info->msg_rx.type == AUTONOMOUS) {
     k_work_submit_to_queue(&work_q, &(drive.auto_drive_work_item));
+  }
+  else { 
+    k_work_submit_to_queue(&work_q, &(arm.imu_data_work_item));  
   }
 }
 
@@ -412,7 +418,7 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
       channel[0], angular_velocity_range, channel_range);
   drive_info->cmd.linear_x = sbus_velocity_interpolation(
       channel[1], linear_velocity_range, channel_range);
-  diff_kine(drive_info->drive_init, drive_info->cmd,
+  diffdrive_update(drive_info->drive_init, drive_info->cmd,
                    drive_info->time_last_drive_update);
   drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
 
@@ -477,7 +483,7 @@ void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
   uint64_t drive_timestamp = k_uptime_get();
   drive_info->cmd.angular_z = com.msg_rx.auto_cmd.angular_z;
   drive_info->cmd.linear_x = com.msg_rx.auto_cmd.linear_x;
-  if (diff_kine(drive_info->drive_init, drive_info->cmd,
+  if (diffdrive_update(drive_info->drive_init, drive_info->cmd,
                        drive_info->time_last_drive_update) == 0) {
   }
   drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
@@ -488,38 +494,50 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   struct arm_arg *arm_info =
       CONTAINER_OF(imu_work_ptr, struct arm_arg, imu_work_item);
 
+  if(k_mutex_lock(&arm_imu_mutex, K_NO_WAIT)!=0) return; 
+
+  arm_info->dir[0] = update_proportional(com.msg_rx.inv.turn_table,
+                                   (arm_info->baseLink.yaw - arm.rover.yaw));
+  arm_info->dir[1] =
+      update_proportional(com.msg_rx.inv.first_link, -1 * arm_info->lowerIMU.pitch);
+  arm_info->dir[2] = update_proportional((com.msg_rx.inv.second_link) -
+                                       (com.msg_rx.inv.first_link),
+                                   arm_info->upperIMU.pitch);
+  arm_info->dir[3] = update_proportional((com.msg_rx.inv.pitch), arm.endIMU.pitch);
+  arm_info->dir[4] = update_proportional(com.msg_rx.inv.roll, arm.endIMU.roll);
+
+  k_mutex_unlock(&arm_imu_mutex);
+  k_work_submit_to_queue(&work_q, &(com.telemetry_tx_work_item));
+}
+
+/* work handler for updating imu data */
+void arm_imu_data_work_handler(struct k_work *imu_data_work_ptr) {
+  struct arm_arg *arm_info =
+      CONTAINER_OF(imu_data_work_ptr, struct arm_arg, imu_data_work_item);
+
+  if(k_mutex_lock(&arm_imu_mutex, K_NO_WAIT)!=0) return; 
+
   /* compute pitch and roll from imu data */
-  if (!process_pitch_roll(imu_lower_joint, &(arm_info->lowerIMU)))
+  if (!process_pitch_roll(&com.msg_rx.imu.firstLink, &(arm_info->lowerIMU)))
     error_mssg_flag = error_mssg_flag | 0x1000;
   // printk("No data from imu_lower_joint: %s\n", imu_lower_joint->name);
 
-  if (!process_pitch_roll(imu_upper_joint, &(arm_info->upperIMU)))
+  if (!process_pitch_roll(&com.msg_rx.imu.secondLink, &(arm_info->upperIMU)))
     error_mssg_flag = error_mssg_flag | 0x2000;
   // printk("No data from imu_upper_joint: %s\n", imu_upper_joint->name);
 
-  if (!process_pitch_roll(imu_pitch_roll, &(arm_info->endIMU)))
+  if (!process_pitch_roll(&com.msg_rx.imu.differential, &(arm_info->endIMU)))
     error_mssg_flag = error_mssg_flag | 0x4000;
   // printk("No data from imu_pitch_roll: %s\n", imu_pitch_roll->name);
 
   /* compute yaw from magnemtometer and imu data */
-  if (!process_yaw(mm_turn_table, &(arm_info->baseLink)))
+  if (!process_yaw(&com.msg_rx.imu.baseLink, &(arm_info->baseLink)))
     error_mssg_flag = error_mssg_flag | 0x8000;
   // printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
-  if (!process_yaw(mm_rogps_uartver, &(arm_info->rover)))
-    error_mssg_flag = error_mssg_flag | 0x8000;
-  // printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
-
-  arm.dir[0] = update_proportional(com.msg_rx.inv.turn_table,
-                                   (arm.baseLink.yaw - arm.rover.yaw));
-  arm.dir[1] =
-      update_proportional(com.msg_rx.inv.first_link, -1 * arm.lowerIMU.pitch);
-  arm.dir[2] = update_proportional((com.msg_rx.inv.second_link) -
-                                       (com.msg_rx.inv.first_link),
-                                   arm.upperIMU.pitch);
-  arm.dir[3] = update_proportional((com.msg_rx.inv.pitch), arm.endIMU.pitch);
-  arm.dir[4] = update_proportional(com.msg_rx.inv.roll, arm.endIMU.roll);
-
-  k_work_submit_to_queue(&work_q, &(com.telemetry_tx_work_item));
+  // if (!process_yaw(mm_rogps_uartver, &(arm_info->rover)))
+  //   error_mssg_flag = error_mssg_flag | 0x8000;
+  // // printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
+  k_mutex_unlock(&arm_imu_mutex);
 }
 
 void arm_channel_work_handler(struct k_work *work_ptr) {
