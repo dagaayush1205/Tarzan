@@ -97,6 +97,8 @@
 	aliases {
 			latte-panda-uart = &cdc_acm_uart0; 
 			telemetry-uart = &usart2;
+      magnetometer = &lsm9ds1_mag;
+      imu = &lsm9ds1_imu; 
 			sbus-uart = &usart6;
      			gps-uart = &usart3;
 			imu-uart = &uart7; 
@@ -105,10 +107,9 @@
 			stepper-motor3 = &stepper_motor_3;
 			stepper-motor4 = &stepper_motor_4; 
 			stepper-motor5 = &stepper_motor_5;
-			imu-rover = &rover_imu; 
 	};
 	chosen {
-		zephyr,console = &usart2;
+		zephyr,console = &cdc_acm_uart0;
 		zephyr,shell-uart = &usart2;
 	};
 };
@@ -194,7 +195,7 @@
 &timers15 {
 	status = "okay";
 	st,prescaler = <5599>; 
-
+      
 	pwm15: pwm {
 		status = "okay"; 
 		pinctrl-0 = <&tim15_ch1_pc12 &tim15_ch2_pe6>;
@@ -207,9 +208,14 @@
 	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb9>;
 	pinctrl-names = "default"; 
 	clock-frequency = <I2C_BITRATE_STANDARD>; 
-	rover_imu: bmm150@13 { 
-		compatible = "bosch,bmm150";
-		reg = <0x13>;
-		status = "okay";
-	};
+  lsm9ds1_imu: lsm9ds1@6b {
+        compatible = "st,lsm9ds1";
+        reg = <0x6b>;
+        status = "okay";
+    }; 
+  lsm9ds1_mag: lsm9ds1@1e {
+        compatible = "st,lsm9ds1_mag";
+        reg = <0x1e>;
+        status = "okay";
+    }; 
 };
