@@ -592,16 +592,11 @@ void arm_channel_work_handler(struct k_work *work_ptr) {
   k_mutex_unlock(&ch_reader_cnt_mutex);
 }
 
-/* work handler for stepper motor write*/
-void arm_stepper_work_handler(enum StepperDirection *dir) {
-  for (int i = 0; i < 5; i++) {
-    arm.pos[i] = Stepper_motor_write(&stepper[i], dir[i], arm.pos[i]);
-  }
-}
-
 /* timer to write to stepper motors*/
 void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
-    arm_stepper_work_handler(arm.dir);
+  for (int i = 0; i < 5; i++) {
+    arm.pos[i] = Stepper_motor_write(&stepper[i], arm.dir[i], arm.pos[i]);
+  }
 }
 K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
 
