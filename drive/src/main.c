@@ -63,7 +63,7 @@ const struct stepper_motor stepper[5] = {
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), step_gpios)}};
 
 /*DT spec for I2C devices */
-const struct device *imu_rover = DEVICE_DT_GET(DT_ALIAS(imu_rover));
+// const struct device *imu_rover = DEVICE_DT_GET(DT_ALIAS(imu_rover));
 
 /* DT spec for leds */
 static const struct gpio_dt_spec init_led =
@@ -304,6 +304,7 @@ void telemetry_tx_work_handler(struct k_work *telemetry_tx_work_ptr) {
   struct com_arg *com_info = CONTAINER_OF(telemetry_tx_work_ptr, struct com_arg,
                                           telemetry_tx_work_item);
 
+  if(k_mutex_lock(&arm_imu_mutex, K_NO_WAIT)!=0) return; 
   com_info->inv_msg_tx.auto_cmd.linear_x = 0;
   com_info->inv_msg_tx.auto_cmd.angular_z = 0;
   com_info->inv_msg_tx.inv.turn_table = 0;
@@ -332,6 +333,7 @@ void telemetry_tx_work_handler(struct k_work *telemetry_tx_work_ptr) {
   for (int i = 0; i < CMD_MSG_LEN; i++) {
     uart_poll_out(telemetry_uart, inv_tx_buf[i]);
   }
+  k_mutex_unlock(&arm_imu_mutex);
 }
 
 void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
@@ -505,9 +507,8 @@ void arm_imu_work_handler(struct k_work *imu_work_ptr) {
                                    arm_info->upperIMU.pitch);
   arm_info->dir[3] = update_proportional((com.msg_rx.inv.pitch), arm.endIMU.pitch);
   arm_info->dir[4] = update_proportional(com.msg_rx.inv.roll, arm.endIMU.roll);
-
   k_mutex_unlock(&arm_imu_mutex);
-  k_work_submit_to_queue(&work_q, &(com.telemetry_tx_work_item));
+  k_work_submit_to_queue(&work_q, &(arm_info->imu_data_work_item));
 }
 
 /* work handler for updating imu data */
@@ -515,7 +516,6 @@ void arm_imu_data_work_handler(struct k_work *imu_data_work_ptr) {
   struct arm_arg *arm_info =
       CONTAINER_OF(imu_data_work_ptr, struct arm_arg, imu_data_work_item);
 
-  if(k_mutex_lock(&arm_imu_mutex, K_NO_WAIT)!=0) return; 
 
   /* compute pitch and roll from imu data */
   if (!process_pitch_roll(&com.msg_rx.imu.firstLink, &(arm_info->lowerIMU)))
@@ -537,7 +537,8 @@ void arm_imu_data_work_handler(struct k_work *imu_data_work_ptr) {
   // if (!process_yaw(mm_rogps_uartver, &(arm_info->rover)))
   //   error_mssg_flag = error_mssg_flag | 0x8000;
   // // printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
-  k_mutex_unlock(&arm_imu_mutex);
+  k_work_submit_to_queue(&work_q, &(com.telemetry_tx_work_item));
+  k_work_submit_to_queue(&work_q, &(arm_info->imu_work_item));
 }
 
 void arm_channel_work_handler(struct k_work *work_ptr) {
@@ -621,11 +622,14 @@ int main() {
   k_mutex_init(&ch_writer_mutex);
   /* inittializing mutex for reader count */
   k_mutex_init(&ch_reader_cnt_mutex);
+  /* inittializing mutex for arm imu */
+  k_mutex_init(&arm_imu_mutex);
   /* initializing work items */
   k_work_init(&sbus_work_item, sbus_work_handler);
   k_work_init(&(drive.drive_work_item), drive_work_handler);
   k_work_init(&(drive.auto_drive_work_item), auto_drive_work_handler);
   k_work_init(&(arm.imu_work_item), arm_imu_work_handler);
+  k_work_init(&(arm.imu_data_work_item), arm_imu_data_work_handler);
   k_work_init(&(arm.channel_work_item), arm_channel_work_handler);
   k_work_init(&(com.cobs_rx_work_item), cobs_rx_work_handler);
   k_work_init(&(com.telemetry_tx_work_item), telemetry_tx_work_handler);
@@ -813,5 +817,6 @@ int main() {
   /* enabling stepper|mssg timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
   k_timer_start(&mssg_timer, K_MSEC(10), K_SECONDS(1));
-  k_work_submit_to_queue(&work_q, &(arm.imu_work_item));
+  k_work_submit_to_queue(&work_q, &(arm.imu_data_work_item));
+  return 0;
 }
