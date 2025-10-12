@@ -1,18 +1,9 @@
 #include <stdint.h>
-
-#include <kyvernitis/lib/kyvernitis.h>
-
+#include <stdlib.h>
+#include <string.h>
 #include <Tarzan/lib/drive.h>
-
 #include <Tarzan/lib/scurve_planner.h>
-
 #include <Tarzan/lib/jerk_limiter.h>
-
-/* interpolates sbus channel value to velocity
- *param :
- *channel - sbus channel
- *velocity_range - velocity range for interpolation
- *channel_range - sbus channel range */
 
 #define LINEAR_V_MAX  1.5f  
 #define LINEAR_A_MAX  1.0f   
@@ -21,36 +12,11 @@
 #define ANGULAR_A_MAX 1.5f  
 #define ANGULAR_J_MAX 3.0f   
 
-void diffdrive_init(struct DiffDriveMotion *drive) {
-    // Set default operating mode and states
-    drive->mode = DRIVE_MODE_TELEOP;
-    drive->is_auto_move_active = false;
-    drive->move_timer = 0.0f;
-
-    // Initialize the teleop jerk limiters with your rover's physical limits
-    jerk_limiter_init(&drive->linear_limiter,0.0f,0.0f,LINEAR_V_MAX,LINEAR_A_MAX,LINEAR_J_MAX);
-
-    jerk_limiter_init(&drive->angular_limiter,0.0f,0.0f,ANGULAR_V_MAX,ANGULAR_A_MAX,ANGULAR_J_MAX);
-}
-
-void start_auto_move(struct DiffDriveMotion *drive, float linear_distance, float angular_distance) {
-    //set to auto if not
-    drive->mode = DRIVE_MODE_AUTO;
-    //define the constraints for the S-curve planner using your constants
-    scurve_constraints_t linear_limits = {LINEAR_V_MAX, LINEAR_A_MAX, LINEAR_J_MAX};
-    scurve_constraints_t angular_limits = {ANGULAR_V_MAX, ANGULAR_A_MAX, ANGULAR_J_MAX};
-
-    // Plan the motion profiles for a simple point-to-point move (start and end velocity are 0)
-    scurve_plan_profile(&drive->linear_profile, &linear_limits, linear_distance, 0.0f, 0.0f);
-    scurve_plan_profile(&drive->angular_profile, &angular_limits, angular_distance, 0.0f, 0.0f);
-    // Reset the timer and activate the move
-    drive->move_timer = 0.0f;
-    drive->is_auto_move_active = true;
-}
-
-
-
-//EXISTING FUNCS
+/* interpolates sbus channel value to velocity
+ *param :
+ *channel - sbus channel
+ *velocity_range - velocity range for interpolation
+ *channel_range - sbus channel range */
 float sbus_velocity_interpolation(uint16_t channel, float *velocity_range,
                                   uint16_t *channel_range) {
 
@@ -98,98 +64,77 @@ uint32_t sbus_pwm_interpolation(uint16_t channel, uint32_t *pwm_range,
   return pwm_interp;
 }
 
-/* float sbus_velocity_interpolation(uint16_t channel, float *velocity_range, uint16_t *channel_range) {
-  if (channel < 950 || channel > 2050) { // Gradual scaling beyond deadlock
-    float factor = (channel < 950) ? (950.0 - channel) / 100.0 : (channel - 2050.0) / 100.0;
-    return velocity_range[0] + (velocity_range[1] - velocity_range[0]) * factor;
-  }
+struct DiffDriveCtx* drive_init(struct DiffDriveConfig *config, int (*velocity_callback)(const float *velocity_buffer, int buffer_len, int wheels_per_side)) {
 
-  if (channel >= 950 && channel <= 1050) // Deadzone check
-    return (velocity_range[0] + velocity_range[1]) / 2; // neutral
+    struct DiffDriveCtx ctx;
 
-  float dchannel = channel_range[1] - channel_range[0];
-  float dvel = velocity_range[1] - velocity_range[0];
-  
-  float vel_interp = velocity_range[0] + (dvel / dchannel) * (channel - channel_range[0]);
-  return vel_interp;
+    ctx.velocity_callback = velocity_callback;
+    ctx.previous_update_timestamp = 0;
+    ctx.drive_control.move_timer = 0.0f;
+
+    // Initialize the teleop jerk limiters with your rover's physical limits
+    struct DiffDriveCtrl drive_control;
+    jerk_limiter_init(&(drive_control.linear_limiter),0.0f,0.0f,LINEAR_V_MAX,LINEAR_A_MAX,LINEAR_J_MAX);
+
+    jerk_limiter_init(&(drive_control.angular_limiter),0.0f,0.0f,ANGULAR_V_MAX,ANGULAR_A_MAX,ANGULAR_J_MAX);
+
+    // scurve_constraints_t linear_limits = {LINEAR_V_MAX, LINEAR_A_MAX, LINEAR_J_MAX};
+    // scurve_constraints_t angular_limits = {ANGULAR_V_MAX, ANGULAR_A_MAX, ANGULAR_J_MAX};
+    //
+    // scurve_plan_profile(&drive_control.linear_profile, &linear_limits, linear_distance, 0.0f, 0.0f);
+    // scurve_plan_profile(&drive_control.angular_profile, &angular_limits, angular_distance, 0.0f, 0.0f);
+
+    
+	struct DiffDriveCtx *heap_ctx = (struct DiffDriveCtx *)malloc(sizeof(ctx));
+	memcpy(heap_ctx, &ctx, sizeof(*heap_ctx));
+	memcpy((void *)&heap_ctx->drive_config, config, sizeof(heap_ctx->drive_config));
+	return (void *)heap_ctx;
 }
 
-
- /*
-uint32_t sbus_pwm_interpolation(uint16_t channel, uint32_t *pwm_range, uint16_t *channel_range) {
-  if (channel < 950 || channel > 2050) { // Gradual scaling beyond deadlock
-    float factor = (channel < 950) ? (950.0 - channel) / 100.0 : (channel - 2050.0) / 100.0;
-    return pwm_range[0] + (pwm_range[1] - pwm_range[0]) * factor;
-  }
-
-  if (channel >= 950 && channel <= 1050) // Deadzone check
-    return 1500000; // neutral
-
-  float dchannel = channel_range[1] - channel_range[0];
-  float dpwm = pwm_range[1] - pwm_range[0];
-  
-  uint32_t pwm_interp = pwm_range[0] + (dpwm / dchannel) * (channel - channel_range[0]);
-  return pwm_interp;
-}
-*/
-
-
-
-int diffdrive_motioncontrol(struct DiffDriveMotion* drive, struct DiffDriveTwist command)
+int diffdrive_kine(struct DiffDriveCtx* ctx, struct DiffDriveTwist command, enum msg_type mode)
 {
-	int ret = 0;
-	// Get time since last update
-	if (k_uptime_delta(&drive->previous_update_timestamp) / 1000 >
-	    drive->config.command_timeout_seconds) {
+    int ret = 0;
+    float linear_command;
+    float angular_command;
+	
+    // Get time since last update
+    if (k_uptime_delta(&ctx->previous_update_timestamp) / 1000 >
+	    ctx->drive_config.command_timeout_seconds) {
 		command.linear_x = 0.0;
 		command.angular_z = 0.0;
 	}
 
-  const float dt_sec = k_uptime_delta(&drive->previous_update_timestamp) / 1000.0f;
+  const float dt_sec = k_uptime_delta(&ctx->previous_update_timestamp) / 1000.0f;
 
-
-  //NEW CODE ADDED
-    float linear_command;
-    float angular_command;
-
-    switch (drive->mode)
-    {
-        case DRIVE_MODE_TELEOP:
-          //MANUAL MODE- we are taking the joystick command
-            linear_command = jerk_limiter_step(&drive->linear_limiter, command.linear_x, dt_sec);
-            angular_command = jerk_limiter_step(&drive->angular_limiter, command.angular_z, dt_sec);
-            break;
-        case DRIVE_MODE_AUTO:
-            //AUTO MODE- we are using scurve
-            if (drive->is_auto_move_active) {
-                drive->move_timer += dt_sec;
-
-                linear_command = scurve_evaluate_velocity(&drive->linear_profile, drive->move_timer);
-                angular_command = scurve_evaluate_velocity(&drive->angular_profile, drive->move_timer);
-
-                // Stop the move when the longer profile is complete
-                float total_move_time = fmaxf(drive->linear_profile.T, drive->angular_profile.T);
-                if (drive->move_timer >= total_move_time) {
-                    drive->is_auto_move_active = false;
-                }
-            } else {
-                // If no auto move is active, command zero velocity
-                linear_command = 0.0f;
-                angular_command = 0.0f;
-            }
-            break;
-    }
-
+   //MANUAL MODE
+   linear_command = jerk_limiter_step(&ctx->drive_control.linear_limiter, command.linear_x, dt_sec);
+   angular_command = jerk_limiter_step(&ctx->drive_control.angular_limiter, command.angular_z, dt_sec);
+    
+ //    if(mode==AUTONOMOUS){
+ //            //AUTO MODE- we are using scurve
+ //                ctx->move_timer += dt_sec;
+	//
+ //                linear_command = scurve_evaluate_velocity(&ctx->linear_profile, ctx->move_timer);
+ //                angular_command = scurve_evaluate_velocity(&ctx->angular_profile, ctx->move_timer);
+	//
+ //                // Stop the move when the longer profile is complete
+ //                float total_move_time = fmaxf(ctx->linear_profile.T, ctx->angular_profile.T);
+ //                if (ctx->move_timer >= total_move_time) {
+ //                    ctx->is_auto_move_active = false;
+ //                }
+ //            }
+	// }
 
 	const float wheel_separation =
-		drive->config.wheel_separation_multiplier * drive->config.wheel_separation;
+		ctx->drive_config.wheel_separation_multiplier * ctx->drive_config.wheel_separation;
 	const float left_wheel_radius =
-		drive->config.left_wheel_radius_multiplier * drive->config.wheel_radius;
+		ctx->drive_config.left_wheel_radius_multiplier * ctx->drive_config.wheel_radius;
 	const float right_wheel_radius =
-		drive->config.right_wheel_radius_multiplier * drive->config.wheel_radius;
+		ctx->drive_config.right_wheel_radius_multiplier * ctx->drive_config.wheel_radius;
+	const int feedback_buffer_size = ctx->drive_config.wheels_per_side * 2;
 
-	float linear_command = command.linear_x;
-	float angular_command = command.angular_z;
+	linear_command = command.linear_x;
+	angular_command = command.angular_z;
 
 	const float velocity_left =
 		(linear_command - angular_command * wheel_separation / 2.0) / left_wheel_radius;
@@ -197,12 +142,13 @@ int diffdrive_motioncontrol(struct DiffDriveMotion* drive, struct DiffDriveTwist
 		(linear_command + angular_command * wheel_separation / 2.0) / right_wheel_radius;
 
 	float *velocity_buffer = (float *)malloc(sizeof(float) * feedback_buffer_size);
-	for (int i = 0; i < drive->config.wheels_per_side; i++) {
+
+	for (int i = 0; i < ctx->drive_config.wheels_per_side; i++) {
 		velocity_buffer[i] = velocity_left;
-		velocity_buffer[drive->config.wheels_per_side + i] = velocity_right;
+		velocity_buffer[ctx->drive_config.wheels_per_side + i] = velocity_right;
 	}
-	if (drive->velocity_callback(velocity_buffer, feedback_buffer_size,
-				     drive->config.wheels_per_side)) {
+	if (ctx->velocity_callback(velocity_buffer, feedback_buffer_size,
+				     ctx->drive_config.wheels_per_side)) {
 		// ERROR: Something went wrong writing the velocities
 		ret = 3;
 	}
