@@ -14,11 +14,6 @@
  *velocity_range - velocity range for interpolation
  *channel_range - sbus channel range */
 
-typedef enum {
-    DRIVE_MODE_TELEOP,
-    DRIVE_MODE_AUTO
-} drive_mode_t;
-
 #define LINEAR_V_MAX  1.5f  
 #define LINEAR_A_MAX  1.0f   
 #define LINEAR_J_MAX  2.5f  
@@ -26,7 +21,7 @@ typedef enum {
 #define ANGULAR_A_MAX 1.5f  
 #define ANGULAR_J_MAX 3.0f   
 
-void diffdrive_init(struct DiffDrive *drive) {
+void diffdrive_init(struct DiffDriveMotion *drive) {
     // Set default operating mode and states
     drive->mode = DRIVE_MODE_TELEOP;
     drive->is_auto_move_active = false;
@@ -38,12 +33,7 @@ void diffdrive_init(struct DiffDrive *drive) {
     jerk_limiter_init(&drive->angular_limiter,0.0f,0.0f,ANGULAR_V_MAX,ANGULAR_A_MAX,ANGULAR_J_MAX);
 }
 
-void set_drive_mode(struct DiffDrive *drive, drive_mode_t new_mode) {
-    drive->mode = new_mode;
-    drive->is_auto_move_active = false;
-}
-
-void start_auto_move(struct DiffDrive *drive, float linear_distance, float angular_distance) {
+void start_auto_move(struct DiffDriveMotion *drive, float linear_distance, float angular_distance) {
     //set to auto if not
     drive->mode = DRIVE_MODE_AUTO;
     //define the constraints for the S-curve planner using your constants
@@ -145,7 +135,7 @@ uint32_t sbus_pwm_interpolation(uint16_t channel, uint32_t *pwm_range, uint16_t 
 
 
 
-int diffdrive_update(struct DiffDrive *drive, struct DiffDriveTwist command)
+int diffdrive_motioncontrol(struct DiffDriveMotion* drive, struct DiffDriveTwist command)
 {
 	int ret = 0;
 	// Get time since last update
