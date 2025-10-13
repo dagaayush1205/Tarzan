@@ -3,6 +3,7 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 
 typedef struct {
     float v_last;   // last output velocity (m/s or rad/s)
@@ -23,8 +24,9 @@ static inline void jerk_limiter_init(jerk_limiter_t *lim,float v0,float a0,float
 
 static inline float jerk_limiter_step(jerk_limiter_t *lim, float v_target, float dt_sec)
 {
+    if(v_target==0.0f) return v_target;
     if (dt_sec <= 0.0f) return lim->v_last;
-
+  
     // desired accel to reach target in one tick (unclamped)
     float a_des = (v_target - lim->v_last) / dt_sec;
 
@@ -51,7 +53,7 @@ static inline float jerk_limiter_step(jerk_limiter_t *lim, float v_target, float
     lim->a_last = a_smooth;
     lim->v_last = v_new;
 
-    return v_new;
+    return (v_new);
 }
 
 #endif // JERK_LIMITER_H

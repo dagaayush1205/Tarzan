@@ -104,11 +104,15 @@ int diffdrive_kine(struct DiffDriveCtx* ctx, struct DiffDriveTwist command, enum
 		command.angular_z = 0.0;
 	}
 
-  const float dt_sec = k_uptime_delta(&ctx->previous_update_timestamp) / 1000.0f;
+  const double dt_sec = k_uptime_delta(&ctx->previous_update_timestamp) / 1000.0;
+  // printf("%.2f\n",dt_sec);
 
    //MANUAL MODE
    linear_command = jerk_limiter_step(&ctx->drive_control.linear_limiter, command.linear_x, dt_sec);
    angular_command = jerk_limiter_step(&ctx->drive_control.angular_limiter, command.angular_z, dt_sec);
+
+   // printf("Actual : %f | %f", command.linear_x, command.angular_z);
+   // printf("Liminted : %f | %f\n",linear_command,angular_command);
     
  //    if(mode==AUTONOMOUS){
  //            //AUTO MODE- we are using scurve

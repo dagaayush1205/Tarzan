@@ -418,8 +418,7 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
       channel[0], angular_velocity_range, channel_range);
   drive_info->cmd.linear_x = sbus_velocity_interpolation(
       channel[1], linear_velocity_range, channel_range);
-  diffdrive_kine(drive_info->drive_init, drive_info->cmd,
-                   drive_info->time_last_drive_update);
+  diffdrive_kine(drive_info->drive_init, drive_info->cmd, 0);
   drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
 
   // tilt servo write
@@ -478,15 +477,14 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 
 /* autonomous drive work handler */
 void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
-  struct drive_arg *drive_info =
-      CONTAINER_OF(auto_drive_work_ptr, struct drive_arg, auto_drive_work_item);
-  uint64_t drive_timestamp = k_uptime_get();
-  drive_info->cmd.angular_z = com.msg_rx.auto_cmd.angular_z;
-  drive_info->cmd.linear_x = com.msg_rx.auto_cmd.linear_x;
-  if (diffdrive_kine(drive_info->drive_init, drive_info->cmd,
-                       drive_info->time_last_drive_update) == 0) {
-  }
-  drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
+  // struct drive_arg *drive_info =
+  //     CONTAINER_OF(auto_drive_work_ptr, struct drive_arg, auto_drive_work_item);
+  // // uint64_t drive_timestamp = k_uptime_get();
+  // drive_info->cmd.angular_z = com.msg_rx.auto_cmd.angular_z;
+  // drive_info->cmd.linear_x = com.msg_rx.auto_cmd.linear_x;
+  // if (diffdrive_kine(drive_info->drive_init, drive_info->cmd,0) == 0) {
+  // }
+  // drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
 }
 
 /* work handler for processing imu */
@@ -814,6 +812,6 @@ int main() {
   /* enabling stepper|mssg timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
   k_timer_start(&mssg_timer, K_MSEC(10), K_SECONDS(1));
-  k_work_submit_to_queue(&work_q, &(arm.imu_data_work_item));
+  // k_work_submit_to_queue(&work_q, &(arm.imu_data_work_item));
   return 0;
 }
