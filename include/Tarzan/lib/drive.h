@@ -3,8 +3,6 @@
 #include <Tarzan/lib/jerk_limiter.h>
 #include <Tarzan/lib/scurve_planner.h>
 
-enum msg_type { AUTONOMOUS, INVERSE , MANUAL};
-
 struct DiffDriveCtrl {
     jerk_limiter_t linear_limiter;
     jerk_limiter_t angular_limiter;
@@ -19,6 +17,8 @@ struct DiffDriveCtx {
    int64_t previous_update_timestamp;
    int (*velocity_callback)(const float *velocity_buffer, int buffer_len, int wheels_per_side);
 };
+
+enum msg_type { AUTONOMOUS, INVERSE, IMU };
 
 float sbus_velocity_interpolation(uint16_t channel, float *velocity_range,
                                   uint16_t *channel_range);
