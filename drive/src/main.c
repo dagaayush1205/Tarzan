@@ -22,7 +22,7 @@
 #define STACK_SIZE 4096   // work_q thread stack size
 #define PRIORITY 2        // work_q thread priority
 #define STEPPER_TIMER 100 // stepper pulse width in microseconds
-
+			  
 /* sbus uart */
 static const struct device *const sbus_uart =
     DEVICE_DT_GET(DT_ALIAS(sbus_uart));
@@ -91,10 +91,12 @@ int check_crc(struct cmd_msg *);
 
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(sbus_msgq, 25 * sizeof(uint8_t), 10, 1);
-/* defining cobs message queue */
-K_MSGQ_DEFINE(msgq_rx, sizeof(struct cmd_msg) + 2, 50, 1);
 /* defining gps message queue */
 K_MSGQ_DEFINE(gps_msgq, sizeof(uint8_t) * 100, 10, 1);
+/* defining cobs message queue */
+K_MSGQ_DEFINE(drive_msgq, sizeof(struct cmd_msg) + 2, 50, 1);
+K_MSGQ_DEFINE(inv_msgq, sizeof(struct cmd_msg) + 2, 50, 1);
+K_MSGQ_DEFINE(imu_msgq, sizeof(struct cmd_msg) + 2, 50, 1);
 
 /* workq dedicated thread */
 K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
@@ -136,15 +138,23 @@ struct arm_arg {
   struct joint rover;
 } arm;
 
-/* struct for communication with latte panda*/
-struct com_arg {
-  struct k_work cobs_rx_work_item;
+/* struct for communication */
+struct com_rx_arg { 
+  struct k_work cobs_rx_work_item; 
+  struct cmd_msg msg_rx;
+  struct k_msgq* msgq_rx;
+  int cobs_bytes_read;
+  uint8_t rx_buf[sizeof(struct cmd_msg) + 2];
+} drive_com = {.msgq_rx = &drive_msgq}, 
+  inv_com = {.msgq_rx = &inv_msgq}, 
+  imu_com = {.msgq_rx = &imu_msgq};
+
+struct com_tx_arg {
   struct k_work telemetry_tx_work_item;
   struct k_work latte_panda_tx_work_item;
-  struct cmd_msg msg_rx;     // to store decoded mssg
   struct cmd_msg inv_msg_tx; // to store encoded inverse mssg
-  struct base_station_msg bs_msg_tx;
-} com;
+  struct base_station_msg bs_msg_tx; // to store encoded base station mssg
+} com_tx;
 
 int ch_reader_cnt;                 // no. of readers accessing channels
 uint16_t channel[16] = {0};        // to store sbus channels
@@ -156,10 +166,8 @@ uint16_t error_mssg_flag = 0x0000; // to store error status byte
 const int CMD_MSG_LEN = sizeof(struct cmd_msg) + 2; // len of inverse mssg
 const int BS_MSG_LEN =
     sizeof(struct base_station_msg) + 2; // len of base station mssg
-uint8_t rx_buf[sizeof(struct cmd_msg) + 2] = {0};
 uint8_t inv_tx_buf[sizeof(struct cmd_msg) + 2] = {0};
 uint8_t bs_tx_buf[sizeof(struct base_station_msg) + 2] = {0};
-int cobs_bytes_read; // to store number of cobs bytes read
 /* range variables */
 float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[] = {-5.5, 5.5};
@@ -217,8 +225,9 @@ void gps_cb(const struct device *dev, void *user_data) {
 }
 
 void cobs_cb(const struct device *dev, void *user_data) {
-  ARG_UNUSED(user_data);
+  struct com_rx_arg *com_ctx = (struct com_rx_arg *) user_data;
   uint8_t c;
+
   if (!uart_irq_update(dev)) {
     return;
   }
@@ -226,17 +235,17 @@ void cobs_cb(const struct device *dev, void *user_data) {
     return;
   }
   while (uart_fifo_read(dev, &c, 1) == 1) {
-    if (c == 0x00 && cobs_bytes_read > 0) {
-      rx_buf[cobs_bytes_read] = 0;
-      if (cobs_bytes_read != (CMD_MSG_LEN - 1)) {
-        cobs_bytes_read = 0;
+    if (c == 0x00 && com_ctx->cobs_bytes_read > 0) {
+      com_ctx->rx_buf[com_ctx->cobs_bytes_read] = 0;
+      if (com_ctx->cobs_bytes_read != (CMD_MSG_LEN - 1)) {
+        com_ctx->cobs_bytes_read = 0;
         continue;
       }
-      k_msgq_put(&msgq_rx, rx_buf, K_NO_WAIT);
-      k_work_submit_to_queue(&work_q, &com.cobs_rx_work_item);
-      cobs_bytes_read = 0;
-    } else if(cobs_bytes_read < sizeof(rx_buf)) {
-      rx_buf[cobs_bytes_read++] = c;
+      k_msgq_put(com_ctx->msgq_rx, com_ctx->rx_buf, K_NO_WAIT);
+      k_work_submit_to_queue(&work_q, &com_ctx->cobs_rx_work_item);
+      com_ctx->cobs_bytes_read = 0;
+    } else if(com_ctx->cobs_bytes_read < sizeof(com_ctx->rx_buf)) {
+      com_ctx->rx_buf[com_ctx->cobs_bytes_read++] = c;
     }
   }
 }
@@ -271,8 +280,8 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
 void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
   uint8_t buf[CMD_MSG_LEN];
   struct com_arg *com_info =
-      CONTAINER_OF(cobs_rx_work_ptr, struct com_arg, cobs_rx_work_item);
-  k_msgq_get(&msgq_rx, buf, K_MSEC(4));
+      CONTAINER_OF(cobs_rx_work_ptr, struct com_rx_arg, cobs_rx_work_item);
+  k_msgq_get(com_info->msgq_rx, buf, K_MSEC(4));
   cobs_decode_result result =
       cobs_decode((void *)&(com_info->msg_rx), sizeof(com_info->msg_rx), buf,
                   CMD_MSG_LEN - 1);
@@ -299,7 +308,7 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
 
 /* encode and transmit cobs message */
 void telemetry_tx_work_handler(struct k_work *telemetry_tx_work_ptr) {
-  struct com_arg *com_info = CONTAINER_OF(telemetry_tx_work_ptr, struct com_arg,
+  struct com_arg *com_info = CONTAINER_OF(telemetry_tx_work_ptr, struct com_tx_arg,
                                           telemetry_tx_work_item);
 
   if(k_mutex_lock(&arm_imu_mutex, K_NO_WAIT)!=0) return; 
@@ -336,7 +345,7 @@ void telemetry_tx_work_handler(struct k_work *telemetry_tx_work_ptr) {
 
 void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
   struct com_arg *com_info = CONTAINER_OF(
-      latte_panda_tx_work_ptr, struct com_arg, latte_panda_tx_work_item);
+      latte_panda_tx_work_ptr, struct com_tx_arg, latte_panda_tx_work_item);
   k_msgq_get(&gps_msgq, com_info->bs_msg_tx.gps_msg, K_MSEC(4));
   com_info->bs_msg_tx.msg_status = error_mssg_flag;
   com_info->bs_msg_tx.crc =
@@ -608,7 +617,6 @@ int main() {
   printk("Tarzan version %s\nFile: %s\n", TARZAN_GIT_VERSION, __FILE__);
 
   int err;
-  // uint32_t dtr = 0;
 
   /* initializing work queue */
   k_work_queue_init(&work_q);
@@ -627,9 +635,11 @@ int main() {
   k_work_init(&(arm.imu_work_item), arm_imu_work_handler);
   k_work_init(&(arm.imu_data_work_item), arm_imu_data_work_handler);
   k_work_init(&(arm.channel_work_item), arm_channel_work_handler);
-  k_work_init(&(com.cobs_rx_work_item), cobs_rx_work_handler);
-  k_work_init(&(com.telemetry_tx_work_item), telemetry_tx_work_handler);
-  k_work_init(&(com.latte_panda_tx_work_item), latte_panda_tx_work_handler);
+  k_work_init(&(drive_com.cobs_rx_work_item), cobs_rx_work_handler);
+  k_work_init(&(inv_com.cobs_rx_work_item), cobs_rx_work_handler);
+  k_work_init(&(imu_com.cobs_rx_work_item), cobs_rx_work_handler);
+  k_work_init(&(com_tx.telemetry_tx_work_item), telemetry_tx_work_handler);
+  k_work_init(&(com_tx.latte_panda_tx_work_item), latte_panda_tx_work_handler);
 
   /* initializing drive configs */
   const struct DiffDriveConfig tmp_drive_config = {
@@ -700,7 +710,7 @@ int main() {
   }
 
   /* set telemtry uart for interrupt */
-  err = uart_irq_callback_user_data_set(telemetry_uart, cobs_cb, NULL);
+  err = uart_irq_callback_user_data_set(telemetry_uart, cobs_cb, &drive_com);
   if (err < 0) {
     if (err == -ENOTSUP) {
       printk("Interrupt-driven UART API support not enabled");
@@ -712,7 +722,7 @@ int main() {
   }
 
   /* set latte panda uart for interrupt */
-  err = uart_irq_callback_user_data_set(latte_panda_uart, cobs_cb, NULL);
+  err = uart_irq_callback_user_data_set(latte_panda_uart, cobs_cb, &inv_com);
   if (err < 0) {
     if (err == -ENOTSUP) {
       printk("Interrupt-driven UART API support not enabled");
@@ -724,7 +734,7 @@ int main() {
   }
 
   /* set imu uart for interrupt */
-  err = uart_irq_callback_user_data_set(imu_uart, cobs_cb, NULL);
+  err = uart_irq_callback_user_data_set(imu_uart, cobs_cb, &imu_com);
   if (err < 0) {
     if (err == -ENOTSUP) {
       printk("Interrupt-driven UART API support not enabled");
