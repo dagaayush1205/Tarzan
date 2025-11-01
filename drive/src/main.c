@@ -22,7 +22,9 @@
 #define STACK_SIZE 4096   // work_q thread stack size
 #define PRIORITY 2        // work_q thread priority
 #define STEPPER_TIMER 100 // stepper pulse width in microseconds
-
+#define CONTROL_LOOP_HZ 50
+#define CONTROL_LOOP_MS (1000/CONTROL_LOOP_HZ) //20ms period
+const float DT_SEC = 1.0f/CONTROL_LOOP_HZ;     //const dt = 0.02f
 /* sbus uart */
 static const struct device *const sbus_uart =
     DEVICE_DT_GET(DT_ALIAS(sbus_uart));
@@ -347,7 +349,7 @@ void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
                   sizeof(struct base_station_msg));
 
   if (result.status != COBS_ENCODE_OK) {
-    // printk("COBS Encoded Failed %d\n", result.status);
+    printk("COBS Encoded Failed %d\n", result.status);
     return;
   }
   bs_tx_buf[BS_MSG_LEN - 1] = 0x00;
@@ -385,7 +387,7 @@ int velocity_callback(const float *velocity_buffer, int buffer_len,
                                        *(velocity_buffer + wheels_per_side + 1),
                                        wheel_velocity_range, pwm_range))) {
     error_mssg_flag = error_mssg_flag | 0x0020;
-    // printk("Drive: Unable to write pwm pulse to Right");
+    printk("Drive: Unable to write pwm pulse to Right");
     return 1;
   }
   return 0;
@@ -398,6 +400,7 @@ int feedback_callback(float *feedback_buffer, int buffer_len,
 
 /* work handler to write to motors */
 void drive_work_handler(struct k_work *drive_work_ptr) {
+  static int64_t last_update_time = 0;
   struct drive_arg *drive_info =
       CONTAINER_OF(drive_work_ptr, struct drive_arg, drive_work_item);
   uint64_t drive_timestamp;
@@ -414,13 +417,18 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 
   // drive motor write
   drive_timestamp = k_uptime_get();
+
+  if((drive_timestamp-last_update_time)>=CONTROL_LOOP_MS)
+  {
+  printk("CONTROL LOOP MS: %d\n", CONTROL_LOOP_MS);
+  last_update_time=drive_timestamp;
   drive_info->cmd.angular_z = sbus_velocity_interpolation(
       channel[0], angular_velocity_range, channel_range);
   drive_info->cmd.linear_x = sbus_velocity_interpolation(
       channel[1], linear_velocity_range, channel_range);
-  diffdrive_kine(drive_info->drive_init, drive_info->cmd, 0);
+  diffdrive_kine(drive_info->drive_init, drive_info->cmd, DT_SEC);
   drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
-
+  }
   // tilt servo write
   if (pwm_motor_write(
           &(motor[6]),

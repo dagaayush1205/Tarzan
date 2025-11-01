@@ -6,11 +6,11 @@
 #include <Tarzan/lib/jerk_limiter.h>
 
 #define LINEAR_V_MAX  1.5f  
-#define LINEAR_A_MAX  1.0f   
-#define LINEAR_J_MAX  2.5f  
+#define LINEAR_A_MAX  0.8f   
+#define LINEAR_J_MAX  1.5f  
 #define ANGULAR_V_MAX 2.0f   
-#define ANGULAR_A_MAX 1.5f  
-#define ANGULAR_J_MAX 3.0f   
+#define ANGULAR_A_MAX 5.0f  
+#define ANGULAR_J_MAX 8.0f   
 
 /* interpolates sbus channel value to velocity
  *param :
@@ -64,34 +64,59 @@ uint32_t sbus_pwm_interpolation(uint16_t channel, uint32_t *pwm_range,
   return pwm_interp;
 }
 
-struct DiffDriveCtx* drive_init(struct DiffDriveConfig *config, int (*velocity_callback)(const float *velocity_buffer, int buffer_len, int wheels_per_side)) {
+/* struct DiffDriveCtx* drive_init(struct DiffDriveConfig *config, int (*velocity_callback)(const float *velocity_buffer, int buffer_len, int wheels_per_side)) { */
+/**/
+/*     struct DiffDriveCtx ctx; */
+/**/
+/*     ctx.velocity_callback = velocity_callback; */
+/*     ctx.previous_update_timestamp = 0; */
+/*     ctx.drive_control.move_timer = 0.0f; */
+/*     ctx.drive_control.mode=MANUAL; */
+/*     ctx.drive_control.move_timer= 0.0f; */
+/**/
+/*     // Initialize the teleop jerk limiters with your rover's physical limits */
+/*     struct DiffDriveCtrl drive_control; */
+/*     /* jerk_limiter_init(&(drive_control.linear_limiter),0.0f,0.0f,LINEAR_V_MAX,LINEAR_A_MAX,LINEAR_J_MAX); */ 
+/*     /**/ 
+/*     /* jerk_limiter_init(&(drive_control.angular_limiter),0.0f,0.0f,ANGULAR_V_MAX,ANGULAR_A_MAX,ANGULAR_J_MAX); */ 
+/*     /**/ 
+/**/
+/*     // scurve_constraints_t linear_limits = {LINEAR_V_MAX, LINEAR_A_MAX, LINEAR_J_MAX}; */
+/*     // scurve_constraints_t angular_limits = {ANGULAR_V_MAX, ANGULAR_A_MAX, ANGULAR_J_MAX}; */
+/*     // */
+/*     // scurve_plan_profile(&drive_control.linear_profile, &linear_limits, linear_distance, 0.0f, 0.0f); */
+/*     // scurve_plan_profile(&drive_control.angular_profile, &angular_limits, angular_distance, 0.0f, 0.0f); */
+/**/
+/**/
+/* 	struct DiffDriveCtx *heap_ctx = (struct DiffDriveCtx *)malloc(sizeof(ctx)); */
+/* 	memcpy(heap_ctx, &ctx, sizeof(*heap_ctx)); */
+/* 	memcpy((void *)&heap_ctx->drive_config, config, sizeof(heap_ctx->drive_config)); */
+/* 	return (void *)heap_ctx; */
+/* } */
+/**/
 
-    struct DiffDriveCtx ctx;
+struct DiffDriveCtx* drive_init(struct DiffDriveConfig *config, int (*velocity_callback)(const float *velocity_buffer, int buffer_len, int wheels_per_side)) 
+{
+    struct DiffDriveCtx *ctx = (struct DiffDriveCtx *)malloc(sizeof(struct DiffDriveCtx));
+    if (!ctx) {
+        return NULL; // Return NULL if memory allocation fails
+    }
 
-    ctx.velocity_callback = velocity_callback;
-    ctx.previous_update_timestamp = 0;
-    ctx.drive_control.move_timer = 0.0f;
+    memcpy(&ctx->drive_config, config, sizeof(ctx->drive_config));
+    ctx->velocity_callback = velocity_callback;
+    ctx->previous_update_timestamp = k_uptime_get(); 
+    //ctx->drive_control.mode = MANUAL;
+    ctx->drive_control.is_auto_active = false; 
+    ctx->drive_control.move_timer = 0.0f;
 
-    // Initialize the teleop jerk limiters with your rover's physical limits
-    struct DiffDriveCtrl drive_control;
-    jerk_limiter_init(&(drive_control.linear_limiter),0.0f,0.0f,LINEAR_V_MAX,LINEAR_A_MAX,LINEAR_J_MAX);
-
-    jerk_limiter_init(&(drive_control.angular_limiter),0.0f,0.0f,ANGULAR_V_MAX,ANGULAR_A_MAX,ANGULAR_J_MAX);
-
-    // scurve_constraints_t linear_limits = {LINEAR_V_MAX, LINEAR_A_MAX, LINEAR_J_MAX};
-    // scurve_constraints_t angular_limits = {ANGULAR_V_MAX, ANGULAR_A_MAX, ANGULAR_J_MAX};
-    //
-    // scurve_plan_profile(&drive_control.linear_profile, &linear_limits, linear_distance, 0.0f, 0.0f);
-    // scurve_plan_profile(&drive_control.angular_profile, &angular_limits, angular_distance, 0.0f, 0.0f);
-
+    //Initialize the limiters inside ctx->drive_control
+    jerk_limiter_init(&ctx->drive_control.linear_limiter, 0.0f, 0.0f, LINEAR_V_MAX, LINEAR_A_MAX, LINEAR_J_MAX);
+    jerk_limiter_init(&ctx->drive_control.angular_limiter, 0.0f, 0.0f, ANGULAR_V_MAX, ANGULAR_A_MAX, ANGULAR_J_MAX);
     
-	struct DiffDriveCtx *heap_ctx = (struct DiffDriveCtx *)malloc(sizeof(ctx));
-	memcpy(heap_ctx, &ctx, sizeof(*heap_ctx));
-	memcpy((void *)&heap_ctx->drive_config, config, sizeof(heap_ctx->drive_config));
-	return (void *)heap_ctx;
+    return ctx; // Return the correctly initialized struct
 }
 
-int diffdrive_kine(struct DiffDriveCtx* ctx, struct DiffDriveTwist command, enum msg_type mode)
+int diffdrive_kine(struct DiffDriveCtx* ctx, struct DiffDriveTwist command, float dt_sec)
 {
     int ret = 0;
     float linear_command;
@@ -103,14 +128,16 @@ int diffdrive_kine(struct DiffDriveCtx* ctx, struct DiffDriveTwist command, enum
 		command.linear_x = 0.0;
 		command.angular_z = 0.0;
 	}
-
-  const double dt_sec = k_uptime_delta(&ctx->previous_update_timestamp) / 1000.0;
+  printk("DT_SEC: %.2f\n",dt_sec);
+  //const double dt_sec = k_uptime_delta(&ctx->previous_update_timestamp) / 1000.0;
   // printf("%.2f\n",dt_sec);
 
    //MANUAL MODE
    linear_command = jerk_limiter_step(&ctx->drive_control.linear_limiter, command.linear_x, dt_sec);
    angular_command = jerk_limiter_step(&ctx->drive_control.angular_limiter, command.angular_z, dt_sec);
-
+   printk("DEBUG: Using ANGULAR_A_MAX: %f\n", ANGULAR_A_MAX); 
+   printk("Raw CMD: %f,%f | ", command.linear_x, command.angular_z);
+   printk("Smooth CMD:%f,%f | ", linear_command, angular_command);
    // printf("Actual : %f | %f", command.linear_x, command.angular_z);
    // printf("Liminted : %f | %f\n",linear_command,angular_command);
     
@@ -137,13 +164,11 @@ int diffdrive_kine(struct DiffDriveCtx* ctx, struct DiffDriveTwist command, enum
 		ctx->drive_config.right_wheel_radius_multiplier * ctx->drive_config.wheel_radius;
 	const int feedback_buffer_size = ctx->drive_config.wheels_per_side * 2;
 
-	linear_command = command.linear_x;
-	angular_command = command.angular_z;
-
 	const float velocity_left =
 		(linear_command - angular_command * wheel_separation / 2.0) / left_wheel_radius;
 	const float velocity_right =
 		(linear_command + angular_command * wheel_separation / 2.0) / right_wheel_radius;
+  printk("Wheels: Left=%.2f, Right=%.2f\n", velocity_left, velocity_right);
 
 	float *velocity_buffer = (float *)malloc(sizeof(float) * feedback_buffer_size);
 
