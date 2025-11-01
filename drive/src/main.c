@@ -281,8 +281,8 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
 /* received cobs message work handler */
 void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
   uint8_t buf[CMD_MSG_LEN];
-  struct com_arg *com_info =
-      CONTAINER_OF(cobs_rx_work_ptr, struct com_rx_arg, cobs_rx_work_item);
+  struct com_rx_arg *com_info =
+      CONTAINER_OF(cobs_rx_work_ptr, struct com_rx_arg, cobs_rx_work_item); //changed type here to check for conflicts
   k_msgq_get(com_info->msgq_rx, buf, K_MSEC(4));
   cobs_decode_result result =
       cobs_decode((void *)&(com_info->msg_rx), sizeof(com_info->msg_rx), buf,
@@ -310,8 +310,8 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
 
 /* encode and transmit cobs message */
 void telemetry_tx_work_handler(struct k_work *telemetry_tx_work_ptr) {
-  struct com_arg *com_info = CONTAINER_OF(telemetry_tx_work_ptr, struct com_tx_arg,
-                                          telemetry_tx_work_item);
+  struct com_tx_arg *com_info = CONTAINER_OF(telemetry_tx_work_ptr, struct com_tx_arg,
+                                          telemetry_tx_work_item); //changed type from com_arg to com_tx_arg for the same error
 
   if(k_mutex_lock(&arm_imu_mutex, K_NO_WAIT)!=0) return; 
   com_info->inv_msg_tx.auto_cmd.linear_x = 0;
@@ -346,8 +346,8 @@ void telemetry_tx_work_handler(struct k_work *telemetry_tx_work_ptr) {
 }
 
 void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
-  struct com_arg *com_info = CONTAINER_OF(
-      latte_panda_tx_work_ptr, struct com_tx_arg, latte_panda_tx_work_item);
+  struct com_tx_arg *com_info = CONTAINER_OF(
+      latte_panda_tx_work_ptr, struct com_tx_arg, latte_panda_tx_work_item); //changed type from som_arg to com_tx_arg to match type
   k_msgq_get(&gps_msgq, com_info->bs_msg_tx.gps_msg, K_MSEC(4));
   com_info->bs_msg_tx.msg_status = error_mssg_flag;
   com_info->bs_msg_tx.crc =
@@ -505,21 +505,23 @@ void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
 }
 
 /* work handler for processing imu */
+//updated- changed com.msg_rx to imu_com.msg_rx to resolve type conflicts
+//changed com.telemetry_tx_work_item to com_tx as that is the struct in this file
 void arm_imu_work_handler(struct k_work *imu_work_ptr) {
   struct arm_arg *arm_info =
       CONTAINER_OF(imu_work_ptr, struct arm_arg, imu_work_item);
 
   if(k_mutex_lock(&arm_imu_mutex, K_NO_WAIT)!=0) return; 
 
-  arm_info->dir[0] = update_proportional(com.msg_rx.inv.turn_table,
+  arm_info->dir[0] = update_proportional(imu_com.msg_rx.inv.turn_table,
                                    (arm_info->baseLink.yaw - arm.rover.yaw));
   arm_info->dir[1] =
-      update_proportional(com.msg_rx.inv.first_link, -1 * arm_info->lowerIMU.pitch);
-  arm_info->dir[2] = update_proportional((com.msg_rx.inv.second_link) -
-                                       (com.msg_rx.inv.first_link),
+      update_proportional(imu_com.msg_rx.inv.first_link, -1 * arm_info->lowerIMU.pitch);
+  arm_info->dir[2] = update_proportional((imu_com.msg_rx.inv.second_link) -
+                                       (imu_com.msg_rx.inv.first_link),
                                    arm_info->upperIMU.pitch);
-  arm_info->dir[3] = update_proportional((com.msg_rx.inv.pitch), arm.endIMU.pitch);
-  arm_info->dir[4] = update_proportional(com.msg_rx.inv.roll, arm.endIMU.roll);
+  arm_info->dir[3] = update_proportional((imu_com.msg_rx.inv.pitch), arm.endIMU.pitch);
+  arm_info->dir[4] = update_proportional(imu_com.msg_rx.inv.roll, arm.endIMU.roll);
   k_mutex_unlock(&arm_imu_mutex);
   k_work_submit_to_queue(&work_q, &(arm_info->imu_data_work_item));
 }
@@ -531,26 +533,26 @@ void arm_imu_data_work_handler(struct k_work *imu_data_work_ptr) {
 
 
   /* compute pitch and roll from imu data */
-  if (!process_pitch_roll(&com.msg_rx.imu.firstLink, &(arm_info->lowerIMU)))
+  if (!process_pitch_roll(&imu_com.msg_rx.imu.firstLink, &(arm_info->lowerIMU)))
     error_mssg_flag = error_mssg_flag | 0x1000;
   // printk("No data from imu_lower_joint: %s\n", imu_lower_joint->name);
 
-  if (!process_pitch_roll(&com.msg_rx.imu.secondLink, &(arm_info->upperIMU)))
+  if (!process_pitch_roll(&imu_com.msg_rx.imu.secondLink, &(arm_info->upperIMU)))
     error_mssg_flag = error_mssg_flag | 0x2000;
   // printk("No data from imu_upper_joint: %s\n", imu_upper_joint->name);
 
-  if (!process_pitch_roll(&com.msg_rx.imu.differential, &(arm_info->endIMU)))
+  if (!process_pitch_roll(&imu_com.msg_rx.imu.differential, &(arm_info->endIMU)))
     error_mssg_flag = error_mssg_flag | 0x4000;
   // printk("No data from imu_pitch_roll: %s\n", imu_pitch_roll->name);
 
   /* compute yaw from magnemtometer and imu data */
-  if (!process_yaw(&com.msg_rx.imu.baseLink, &(arm_info->baseLink)))
+  if (!process_yaw(&imu_com.msg_rx.imu.baseLink, &(arm_info->baseLink)))
     error_mssg_flag = error_mssg_flag | 0x8000;
   // printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
   // if (!process_yaw(mm_rogps_uartver, &(arm_info->rover)))
   //   error_mssg_flag = error_mssg_flag | 0x8000;
   // // printk("No data from mm_turn_table: %s\n", mm_turn_table->name);
-  k_work_submit_to_queue(&work_q, &(com.telemetry_tx_work_item));
+  k_work_submit_to_queue(&work_q, &(com_tx.telemetry_tx_work_item));
   k_work_submit_to_queue(&work_q, &(arm_info->imu_work_item));
 }
 
@@ -616,7 +618,7 @@ K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
 
 /* timer to write mssg to latte panda */
 void mssg_timer_handler(struct k_timer *mssg_timer_ptr) {
-  k_work_submit_to_queue(&work_q, &(com.latte_panda_tx_work_item));
+  k_work_submit_to_queue(&work_q, &(com_tx.latte_panda_tx_work_item));
 }
 K_TIMER_DEFINE(mssg_timer, mssg_timer_handler, NULL);
 
