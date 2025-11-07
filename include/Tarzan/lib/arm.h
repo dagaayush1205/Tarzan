@@ -25,6 +25,7 @@ struct joint {
   double yaw;
   uint64_t prev_time;
   double gyro_offset[3];
+  double mag_offset[3];
 };
 /* inverse message */
 struct inverse_msg {
@@ -58,6 +59,10 @@ int process_pitch_roll(const struct imu_data *data, struct joint *IMU);
 int process_yaw(const struct imu_data *data, struct joint *MAG);
 
 int calibration(const struct device *dev, struct joint *IMU);
+
+int calibrationlsm(const struct device *dev, struct joint *IMU);
+
+int calibrate_magnetometer(const struct device *dev, struct joint *IMU, int32_t duration_ms);
 
 enum StepperDirection update_proportional(double target_angle,
                                           double current_angel);
