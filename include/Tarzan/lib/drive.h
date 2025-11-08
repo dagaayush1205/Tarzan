@@ -8,7 +8,6 @@ struct DiffDriveCtrl {
     jerk_limiter_t angular_limiter;
     scurve_profile_t linear_profile;
     scurve_profile_t angular_profile;
-    //enum msg_type mode;
     bool is_auto_active;
     float move_timer;
 };
