@@ -40,10 +40,20 @@ struct inverse_msg {
 };
 /* imu data */ 
 struct imu_data { 
+  enum {
+        IMU_OK = 0,
+        IMU__NOT_READY,
+        IMU_CALIBRATION_FAILED,
+        IMU_FETCH_FAILED
+  } error_code;
   double accel[3]; 
   double gyro[3];
   double mag[3];
   double gyro_offset[3];
+  double accel_offset[3];
+  uint64_t prev_time;
+  double angle_pitch;
+  double angle_roll;
 };
 /* imu data msg */ 
 struct imu_msg {

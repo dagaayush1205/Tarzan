@@ -14,19 +14,10 @@
 
 #define DEG2RAD (0.017453292519943295f)
 #define RAD2DEG (57.29577951308232f)
-
-//these values are taken from another offset code.
-#define GYRO_BIAS_X (-0.01714633f) 
-#define GYRO_BIAS_Y (0.00701435f)
-#define GYRO_BIAS_Z (0.01436433f)
-
-#define ACCEL_BIAS_X (0.59003544f)
-#define ACCEL_BIAS_Y (0.05487948f)
-#define ACCEL_BIAS_Z (0.0f) //keep this 0 as g 
-
 #define MAG_OFFSET_X (0.0190f)
 #define MAG_OFFSET_Y (0.0740f)
 #define MAG_OFFSET_Z (0.3251f)
+
 
 static const struct device *const mag_dev= DEVICE_DT_GET(DT_ALIAS(magnetometer));
 static const struct device *const imu_dev= DEVICE_DT_GET(DT_ALIAS(imu));
@@ -36,6 +27,7 @@ static const struct device *const latte_panda_uart =
 int main(void)
 {
   struct joint mag;
+  struct joint imu_data;
   /* latte panda uart ready check */
   if (!device_is_ready(latte_panda_uart)) {
     printk("LATTE PANDA UART device not ready");
@@ -83,7 +75,10 @@ if (sensor_attr_set(imu_dev, SENSOR_CHAN_GYRO_XYZ,
     printk("Accelerometer sampling frequency set to 50 Hz.\n");
 
 uint32_t last_time =k_uptime_get_32();
-
+if (calibrationlsm(imu_dev, &imu_data) != 0) {
+        printk("Gyroscope calibration FAILED. Halting.\n");
+        return 1; // Or handle this error as needed
+    }
 while (1) {
     uint32_t now = k_uptime_get_32();
     float dt = (float)(now - last_time)/1000.0f; //calculating dt in seconds
@@ -116,30 +111,47 @@ while (1) {
     sensor_channel_get(imu_dev, SENSOR_CHAN_ACCEL_Y, &accel[1]);
     sensor_channel_get(imu_dev, SENSOR_CHAN_ACCEL_Z, &accel[2]);
 
+    printk("Accelerometer Values: %d, %d, %d \n",accel[0],accel[1],accel[2]);
+    printk("Gyroscope Values: %d, %d, %d \n",gyro[0],gyro[1],gyro[2]);
+    printk("Magnetometer Values: %d, %d, %d \n",mag[0],mag[1],mag[2]);
+    printk("\n");
+
     //applying offset bias correction to prevent drift
     //change the orientation if needed after testing
-    float ax= (float)sensor_value_to_double(&accel[0])- ACCEL_BIAS_X;
-    float ay= (float)sensor_value_to_double(&accel[1])- ACCEL_BIAS_Y;
-    float az= (float)sensor_value_to_double(&accel[2])- ACCEL_BIAS_Z;
+        float ax = (float)sensor_value_to_double(&accel[0]);
+        float ay = (float)sensor_value_to_double(&accel[1]);
+        float az = (float)sensor_value_to_double(&accel[2]);
 
-    float gx= (float)sensor_value_to_double(&gyro[0])- GYRO_BIAS_X;
-    float gy= (float)sensor_value_to_double(&gyro[1])- GYRO_BIAS_Y;
-    float gz= (float)sensor_value_to_double(&gyro[2])- GYRO_BIAS_Z;
+        // Replace the hard-coded GYRO_BIAS with the values from our struct
+        float gx = (float)sensor_value_to_double(&gyro[0])-imu_data.gyro_offset[0];
+        float gy = (float)sensor_value_to_double(&gyro[1])-imu_data.gyro_offset[1];
+        float gz = (float)sensor_value_to_double(&gyro[2])-imu_data.gyro_offset[2];
 
-  
-    float mx= (float)sensor_value_to_double(&mag[0])- MAG_OFFSET_X;
-    float my= (float)sensor_value_to_double(&mag[1])- MAG_OFFSET_Y;
-    float mz= (float)sensor_value_to_double(&mag[2])- MAG_OFFSET_Z;
+        // You still need to calibrate the magnetometer!
+        // The magnetometer calibration example I sent before would fill
+        // imu_data.mag_offset[0..2]
+        float mx = (float)sensor_value_to_double(&mag[0])-MAG_OFFSET_X;
+        float my = (float)sensor_value_to_double(&mag[1])-MAG_OFFSET_Y;
+        float mz = (float)sensor_value_to_double(&mag[2])-MAG_OFFSET_Z;
 
+ printk("Before madgiwck filter: ax= %d, ay=%d, az=%d \n",ax,ay,az);
+  printk("Before madgiwck filter: gx= %d, gy=%d, gz=%d \n",gx,gy,gz);
+  printk("Before madgiwck filter: gx= %d, gy=%d, gz=%d \n",gx,gy,gz);
+    
+    printk("\n");
     //9dof madgwick filter
     imu_filter(ax, ay, az, gx, gy, gz, mx, my, mz, dt);
+
+ printk("AFTER madgiwck filter: ax= %d, ay=%d, az=%d \n",ax,ay,az);
+  printk("AFTER madgiwck filter: gx= %d, gy=%d, gz=%d \n",gx,gy,gz);
+  printk("AFTER madgiwck filter: gx= %d, gy=%d, gz=%d \n",gx,gy,gz);
 
     //converting quaternion to euler
     float roll, pitch, yaw;
     eulerAngles(q_est, &roll, &pitch, &yaw);
 
     printk("Yaw = %.2f°, Pitch = %.2f°, Roll = %.2f°\n", yaw, pitch, roll);
-    lqr_yaw_correction(yaw); //from smc_test.c
+   // lqr_yaw_correction(yaw); //from smc_test.c
 
     k_msleep(20);  //~50hz loop rate
 }

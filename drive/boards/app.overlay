@@ -107,6 +107,7 @@
 			stepper-motor3 = &stepper_motor_3;
 			stepper-motor4 = &stepper_motor_4; 
 			stepper-motor5 = &stepper_motor_5;
+			imu-rover = &rover_imu; 
 	};
 	chosen {
 		zephyr,console = &cdc_acm_uart0;
