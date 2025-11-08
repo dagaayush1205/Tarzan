@@ -11,6 +11,9 @@ manifest:
           - cmsis
           - cmsis_6
           - hal_stm32
+          - hal_rpi_pico # required for Pico board support
+          - hal_infineon # required for Wifi chip support
+          - segger       # required for Segger RTT support
 
     - name: kyvernitis 
       url: https://github.com/waseemr02/kyvernitis
