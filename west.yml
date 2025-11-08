@@ -11,6 +11,9 @@ manifest:
           - cmsis
           - cmsis_6
           - hal_stm32
+          - hal_rpi_pico 
+          - segger
+
 
     - name: kyvernitis 
       url: https://github.com/waseemr02/kyvernitis
