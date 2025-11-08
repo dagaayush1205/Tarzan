@@ -8,6 +8,8 @@ struct DiffDriveCtrl {
     jerk_limiter_t angular_limiter;
     scurve_profile_t linear_profile;
     scurve_profile_t angular_profile;
+    //enum msg_type mode;
+    bool is_auto_active;
     float move_timer;
 };
 
@@ -28,6 +30,6 @@ uint32_t sbus_pwm_interpolation(uint16_t channel, uint32_t *pwm_range,
 
 struct DiffDriveCtx* drive_init(struct DiffDriveConfig *config, int (*velocity_callback)(const float *velocity_buffer, int buffer_len, int wheels_per_side));
 
-int diffdrive_kine(struct DiffDriveCtx* ctx, struct DiffDriveTwist command, enum msg_type mode);
+int diffdrive_kine(struct DiffDriveCtx* ctx, struct DiffDriveTwist command, float dt_sec);
 
 

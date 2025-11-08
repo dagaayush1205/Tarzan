@@ -1,5 +1,5 @@
 #include <kyvernitis/lib/kyvernitis.h>
-
+#include <float.h>
 #include <Tarzan/lib/arm.h>
 #include <math.h>
 
@@ -66,6 +66,84 @@ int calibration(const struct device *dev, struct joint *IMU) {
 
   return 0;
 }
+
+int calibrationlsm(const struct device *dev, struct joint *IMU) {
+  //struct sensor_value mag[3];
+  struct sensor_value accel[3];
+  struct sensor_value gyro[3];
+  double true_gyro = 0;
+  int rc;
+  for (int i = 0; i < 1000; i++) {
+    rc = sensor_sample_fetch(dev);
+    if (rc == 0)
+      rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+    if (rc == 0)
+      rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
+    for (int i = 0; i < 3; i++)
+      IMU->gyro_offset[i] += (sensor_value_to_double(&gyro[i]) - true_gyro);
+    k_sleep(K_MSEC(1));
+  }
+  if (rc == 0) {
+    for (int i = 0; i < 3; i++)
+      IMU->gyro_offset[i] = IMU->gyro_offset[i] / 1000.0;
+  } else
+    return 1;
+  return 0;
+}
+
+//RECHECK THIS FUNCTION
+int calibrate_magnetometer(const struct device *dev, struct joint *imu_data, int32_t duration_ms)
+{
+    struct sensor_value mag[3];
+    int rc = 0;
+    int64_t start_time = k_uptime_get();
+
+    double mag_max[3] = {-DBL_MAX, -DBL_MAX, -DBL_MAX};
+    double mag_min[3] = {DBL_MAX, DBL_MAX, DBL_MAX};
+
+    imu_data->mag_offset[0] = 0.0;
+    imu_data->mag_offset[1] = 0.0;
+    imu_data->mag_offset[2] = 0.0;
+
+    printk("Starting magnetometer calibration...\n");
+    printk("Please rotate the rover slowly for %d seconds.\n", duration_ms / 1000);
+    printk("For best results, spin it in 1-2 full circles AND tilt it up/down.\n");
+    while (k_uptime_get() - start_time < duration_ms) {
+        rc = sensor_sample_fetch(dev);
+        if (rc != 0) {
+            printk("Error: Failed to fetch mag sample. rc = %d\n", rc);
+            return rc;
+        }
+        rc = sensor_channel_get(dev, SENSOR_CHAN_MAGN_XYZ, mag);
+        if (rc != 0) {
+            printk("Error: Failed to get magnetometer data. rc = %d\n", rc);
+            return rc;
+        }
+        for (int i = 0; i < 3; i++) {
+            double val = sensor_value_to_double(&mag[i]);
+            if (val > mag_max[i]) {
+                mag_max[i] = val;
+            }
+            if (val < mag_min[i]) {
+                mag_min[i] = val;
+            }
+        }
+        k_sleep(K_MSEC(50)); 
+    }
+
+    for (int i = 0; i < 3; i++) {
+        imu_data->mag_offset[i] = (mag_max[i] + mag_min[i]) / 2.0;
+    }
+
+    printk("Magnetometer calibration complete.\n");
+    printk("Offsets: X=%.4f, Y=%.4f, Z=%.4f\n",
+           imu_data->mag_offset[0],
+           imu_data->mag_offset[1],
+           imu_data->mag_offset[2]);
+
+    return 0;
+}
+
 
 /* complementary filter to compute pitch & roll
  * param:
