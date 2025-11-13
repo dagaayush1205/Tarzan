@@ -6,7 +6,7 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/drivers/sensor.h>
 #include <Tarzan/lib/arm.h>
-
+#include <Tarzan/lib/cobs.h>
 
 static struct imu_data imu_used = {
    .error_code=IMU_NOT_READY,
@@ -14,10 +14,11 @@ static struct imu_data imu_used = {
    .pitch= 0.0,
    .roll= 0.0
 };
-
+#define TX_BUF_LEN 512
 static const struct device *imu_joint = DEVICE_DT_GET(DT_ALIAS(imu_joint));
 
-static const struct device *const pico_uart = DEVICE_DT_GET(DT_ALIAS(pico_uart));
+const struct device *uart0_dev = DEVICE_DT_GET(DT_ALIAS(pico_uart));
+// const struct device *uart1_dev = DEVICE_DT_GET(DT_NODELABEL(uart1));
 
 #define M_PI 3.14159265358979323846
 
@@ -32,19 +33,37 @@ float true_gyro[3] = {0, 0, 0};
 
 int calibration_mpu(const struct device *dev, struct imu_data *data);
 int process_pitch_roll_mpu(const struct device *dev, struct imu_data *data);
+void send_string_poll(const struct device *uart_dev, const char *str);
 
 int main(void)
 {
-    if (!device_is_ready(pico_uart)) {
-    printk("Uart device not ready\n");
+    int ret;
+    char tx_buf[TX_BUF_LEN];
+    if (!device_is_ready(uart0_dev)) {
+      printk("Uart0  device not ready\n");
+      return -1;
     }
+    // if (!device_is_ready(uart1_dev)) {
+    //   printk("uart1 device not ready\n");
+    //   return -1;
+    // }
+
+
     if (!device_is_ready(imu_joint)) {
         printk("IMU not ready.\n");
     }
     if (calibration_mpu(imu_joint, &imu_used)) {
     printk("Calibration failed for device %s\n", imu_joint->name);
     }
-  //put main loop here
+    while(1)
+  {
+    ret = process_pitch_roll_mpu(imu_joint, &imu_used); 
+    cobs_encode_result result = cobs_encode(tx_buf, TX_BUF_LEN, &imu_used, sizeof(struct imu_data)); 
+    tx_buf[TX_BUF_LEN - 1] = 0x00;
+    for (int i = 0; i < TX_BUF_LEN; i++) {
+      uart_poll_out(uart0_dev, tx_buf[i]);
+    }
+  }
 }
 
 int calibration_mpu(const struct device *dev, struct imu_data *data) {
@@ -140,4 +159,9 @@ int process_pitch_roll_mpu(const struct device *dev, struct imu_data *data) {
   }
   return 0;
 }
-
+void send_string_poll(const struct device *uart_dev, const char *str)
+{
+	for (int i = 0; str[i] != '\0'; i++) {
+		uart_poll_out(uart_dev, str[i]);
+	}
+}
