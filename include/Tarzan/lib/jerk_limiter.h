@@ -24,14 +24,10 @@ static inline void jerk_limiter_init(jerk_limiter_t *lim,float v0,float a0,float
 
 static inline float jerk_limiter_step(jerk_limiter_t *lim, float v_target, float dt_sec)
 {
-    printk("Jerk Limitter called\n");
-
-    //if(v_target==0.0f) return v_target;
  
     if (v_target == 0.0f) {
         lim->a_last = 0.0f; 
         lim->v_last = 0.0f; // Reset velocity state
-        printk("Jerk Limitter ended (Neutral Bypass)\n");
         return 0.0f;      // Return neutral immediately
     }
     if (dt_sec <= 0.0f) return lim->v_last;
@@ -62,7 +58,6 @@ static inline float jerk_limiter_step(jerk_limiter_t *lim, float v_target, float
     lim->a_last = a_smooth;
     lim->v_last = v_new;
 
-    printk("Jerk Limitter ended\n");
     return (v_new);
 }
 
