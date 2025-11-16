@@ -1,3 +1,4 @@
+#pragma once
 #include <stdint.h>
 
 void parse_buffer(uint8_t buff[25], uint16_t channel[16]);
