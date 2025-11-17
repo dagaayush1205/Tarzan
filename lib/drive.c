@@ -13,20 +13,19 @@
 
 /* Wrapper around pwm_set_pulse_dt to ensure that pulse_width
 remains under max-min ranges
-params: 
-motor-> pwm pin to write 
+params:
+motor-> pwm pin to write
 pulse_width-> the pwm value to write*/
-int pwm_motor_write(const struct pwm_motor *motor, uint32_t pulse_width)
-{
-	// wrapper around pwm_set_pulse_dt to ensure that pulse_width 
-	// remains under max-min range
-	if (pulse_width <= motor->min_pulse)
-		pulse_width = motor->min_pulse;
-	if (pulse_width >= motor->max_pulse)
-		pulse_width = motor->max_pulse;
-	
-	int ret = pwm_set_pulse_dt(&(motor->dev_spec), pulse_width);
-	return ret;
+int pwm_motor_write(const struct pwm_motor *motor, uint32_t pulse_width) {
+  // wrapper around pwm_set_pulse_dt to ensure that pulse_width
+  // remains under max-min range
+  if (pulse_width <= motor->min_pulse)
+    pulse_width = motor->min_pulse;
+  if (pulse_width >= motor->max_pulse)
+    pulse_width = motor->max_pulse;
+
+  int ret = pwm_set_pulse_dt(&(motor->dev_spec), pulse_width);
+  return ret;
 }
 
 /* Velocity to PWM interpolation
@@ -34,26 +33,27 @@ int pwm_motor_write(const struct pwm_motor *motor, uint32_t pulse_width)
  * velocity-> input velocity
  * vel_range-> input velocity range
  * pwm_range-> output pwm range*/
-uint32_t velocity_pwm_interpolation(float velocity, float *vel_range, uint32_t *pwm_range)
-{
-	if (velocity > vel_range[1]) {
-		return pwm_range[1];
-	}
+uint32_t velocity_pwm_interpolation(float velocity, float *vel_range,
+                                    uint32_t *pwm_range) {
+  if (velocity > vel_range[1]) {
+    return pwm_range[1];
+  }
 
-	if (velocity < vel_range[0]) {
-		return pwm_range[0];
-	}
+  if (velocity < vel_range[0]) {
+    return pwm_range[0];
+  }
 
-	if (abs((int)velocity * 100) == 0) {
-		return (uint32_t)((pwm_range[0] + pwm_range[1]) / 2);
-	}
+  if (abs((int)velocity * 100) == 0) {
+    return (uint32_t)((pwm_range[0] + pwm_range[1]) / 2);
+  }
 
-	float dvel = vel_range[1] - vel_range[0];
-	float dpwm = pwm_range[1] - pwm_range[0];
+  float dvel = vel_range[1] - vel_range[0];
+  float dpwm = pwm_range[1] - pwm_range[0];
 
-	uint32_t pwm_interp = pwm_range[0] + (dpwm / dvel) * (velocity - vel_range[0]);
+  uint32_t pwm_interp =
+      pwm_range[0] + (dpwm / dvel) * (velocity - vel_range[0]);
 
-	return pwm_interp;
+  return pwm_interp;
 }
 
 /* interpolates sbus channel value to velocity
@@ -144,8 +144,8 @@ drive_init(struct DiffDriveConfig *config,
  * ctx-> differential drive context var
  * command-> linear and angular command
  * dt_sec-> time since last update*/
-int diffdrive_kine(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
-                   float dt_sec) {
+int diffdrive_update(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
+                     float dt_sec) {
   int ret = 0;
   float linear_command;
   float angular_command;
@@ -188,10 +188,10 @@ int diffdrive_kine(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
     velocity_buffer[ctx->drive_config.wheels_per_side + i] = velocity_right;
   }
   if (ctx->velocity_callback(velocity_buffer, feedback_buffer_size,
-                             ctx->drive_config.wheels_per_side)) {
+                             ctx->drive_config.wheels_per_side))
     // ERROR: Something went wrong writing the velocities
-    ret = 3;
-  }
+    ret = 1;
+
   free(velocity_buffer);
   return ret;
 }
