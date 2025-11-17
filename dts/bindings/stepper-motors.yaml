@@ -1,23 +1,23 @@
-description: PWM-driven motors (parent node)
+description: Stepper motors driven by TB6600 (parent node)
 
-compatible: "pwm-motors"
-
-include: base.yaml
+compatible: "stepper-motors"
 
 child-binding:
-  description: PWM-driven motors (child node)
+  description: GPIO-driven dc motor (child node)
   properties:
-    pwms:
+    dir-gpios:
       required: true
       type: phandle-array
-      description: PWM specifier driving the motor
+      description: |
+        Dir pin for the motor
 
-    min-pulse:
+    step-gpios:
       required: true
-      type: int  
-      description: Minimum pulse width (nanoseconds)
+      type: phandle-array
+      description: |
+        Step pin for the motor
 
-    max-pulse:
-      required: true
-      type: int 
-      description: Maximum pulse width (nanoseconds)
+    label:
+      type: string
+      description: |
+        Human readable string describing the motor. 
