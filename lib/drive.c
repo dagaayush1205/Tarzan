@@ -1,3 +1,4 @@
+#include "Tarzan/lib/lqr.h"
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/jerk_limiter.h>
 #include <Tarzan/lib/scurve_planner.h>
@@ -119,22 +120,25 @@ drive_init(struct DiffDriveConfig *config,
                                     int buffer_len, int wheels_per_side)) {
   struct DiffDriveCtx *ctx =
       (struct DiffDriveCtx *)malloc(sizeof(struct DiffDriveCtx));
-#include <zephyr/kernel.h>
+
   if (!ctx) {
     return NULL; // Return NULL if memory allocation fails
   }
 
   memcpy(&ctx->drive_config, config, sizeof(ctx->drive_config));
-  ctx->velocity_callback = velocity_callback;
-  ctx->previous_update_timestamp = k_uptime_get();
-  ctx->drive_control.is_auto_active = false;
-  ctx->drive_control.move_timer = 0.0f;
 
-  // Initialize the limiters inside ctx->drive_control
+  ctx->velocity_callback = velocity_callback;
+
+  ctx->previous_update_timestamp = k_uptime_get();
+
+  // Initialize the jerk limiter
   jerk_limiter_init(&ctx->drive_control.linear_limiter, 0.0f, 0.0f,
                     LINEAR_V_MAX, LINEAR_A_MAX, LINEAR_J_MAX);
   jerk_limiter_init(&ctx->drive_control.angular_limiter, 0.0f, 0.0f,
                     ANGULAR_V_MAX, ANGULAR_A_MAX, ANGULAR_J_MAX);
+
+  // Initialize lqr gains 
+  init_lqr_gains(&ctx->drive_control.yaw_error);
 
   return ctx;
 }
@@ -145,7 +149,7 @@ drive_init(struct DiffDriveConfig *config,
  * command-> linear and angular command
  * dt_sec-> time since last update*/
 int diffdrive_update(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
-                     float dt_sec) {
+                     float dt_sec, float yaw, float yaw_rate) {
   int ret = 0;
   float linear_command;
   float angular_command;
@@ -163,19 +167,32 @@ int diffdrive_update(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
   angular_command = jerk_limiter_step(&ctx->drive_control.angular_limiter,
                                       command.angular_z, dt_sec);
 
+  if(angular_command!=0.0f){
+	  ctx->drive_control.yaw_error.desired_yaw = yaw;
+  }
+  else if(linear_command!=0.0f){
+	  ctx->drive_control.yaw_error.yaw = yaw;
+	  ctx->drive_control.yaw_error.yaw_rate = yaw_rate;
+	  angular_command = lqr_yaw_correction(&ctx->drive_control.yaw_error);
+  }
+
   const float wheel_separation = ctx->drive_config.wheel_separation_multiplier *
                                  ctx->drive_config.wheel_separation;
+
   const float left_wheel_radius =
       ctx->drive_config.left_wheel_radius_multiplier *
       ctx->drive_config.wheel_radius;
+
   const float right_wheel_radius =
       ctx->drive_config.right_wheel_radius_multiplier *
       ctx->drive_config.wheel_radius;
+
   const int feedback_buffer_size = ctx->drive_config.wheels_per_side * 2;
 
   const float velocity_left =
       (linear_command - angular_command * wheel_separation / 2.0f) /
       left_wheel_radius;
+
   const float velocity_right =
       (linear_command + angular_command * wheel_separation / 2.0f) /
       right_wheel_radius;
@@ -187,11 +204,12 @@ int diffdrive_update(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
     velocity_buffer[i] = velocity_left;
     velocity_buffer[ctx->drive_config.wheels_per_side + i] = velocity_right;
   }
+
   if (ctx->velocity_callback(velocity_buffer, feedback_buffer_size,
                              ctx->drive_config.wheels_per_side))
-    // ERROR: Something went wrong writing the velocities
     ret = 1;
 
   free(velocity_buffer);
+
   return ret;
 }
