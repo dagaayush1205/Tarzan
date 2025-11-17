@@ -63,6 +63,7 @@
 			max-pulse = <PWM_USEC(2500)>;
 		};
 	};
+
 	steppermotors { 
 		compatible = "stepper-motors"; 
 		stepper_motor_1: motor_1 { 
@@ -94,22 +95,31 @@
 		};
 	};
 
+	switches: limit_switches {
+			  compatible = "gpio-keys";
+			  switch1: switch_1 {
+				gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+		 	};
+	};
+
 	aliases {
 			latte-panda-uart = &cdc_acm_uart0; 
 			telemetry-uart = &usart2;
-      magnetometer = &lsm9ds1_mag;
-      imu = &lsm9ds1_imu; 
 			sbus-uart = &usart6;
      			gps-uart = &usart3;
 			imu-uart = &uart7; 
+      			mag = &lsm9ds1_mag;
+      			imu = &lsm9ds1_imu; 
 			stepper-motor1 = &stepper_motor_1; 
 			stepper-motor2 = &stepper_motor_2; 
 			stepper-motor3 = &stepper_motor_3;
 			stepper-motor4 = &stepper_motor_4; 
 			stepper-motor5 = &stepper_motor_5;
+			limit-switch = &switch1;
 	};
+
 	chosen {
-		zephyr,console = &cdc_acm_uart0;
+		zephyr,console = &usart2;
 		zephyr,shell-uart = &usart2;
 	};
 };
@@ -208,14 +218,57 @@
 	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb9>;
 	pinctrl-names = "default"; 
 	clock-frequency = <I2C_BITRATE_STANDARD>; 
-  lsm9ds1_imu: lsm9ds1@6b {
+
+	lsm9ds1_imu: lsm9ds1@6b {
         compatible = "st,lsm9ds1";
         reg = <0x6b>;
         status = "okay";
-    }; 
-  lsm9ds1_mag: lsm9ds1@1e {
+    	}; 
+  	lsm9ds1_mag: lsm9ds1@1e {
         compatible = "st,lsm9ds1_mag";
         reg = <0x1e>;
         status = "okay";
-    }; 
+    	}; 
+	lj_imu: mpu6050@68 { 
+		compatible = "invensense,mpu6050";
+		reg = <0x68>;
+		status = "okay"; 
+	}; 
+	uj_imu: mpu6050@69 { 
+		compatible = "invensense,mpu6050";
+		reg = <0x69>;
+		status = "okay"; 
+	};
+	tt_mm: bmm150@13 { 
+		compatible = "bosch,bmm150";
+		reg = <0x13>;
+		status = "okay";
+	};
+};
+
+&i2c4 {
+	status = "okay"; 
+	pinctrl-0 = <&i2c4_scl_pf14 &i2c4_sda_pf15>;
+	pinctrl-names = "default"; 
+	clock-frequency = <I2C_BITRATE_STANDARD>; 
+
+	tt_imu: mpu6050@68 { 
+		compatible = "invensense,mpu6050";
+		reg = <0x68>;
+		status = "okay"; 
+	};
+	pr_imu: mpu6050@69 { 
+		compatible = "invensense,mpu6050";
+		reg = <0x69>;
+		status = "okay"; 
+	};
+	rover_mm: bmm150@13 {
+		compatible = "bosch,bmm150";
+		reg = <0x13>;
+		status = "okay";
+	};
+ 	i2c-dump-allowlist {
+ 	       compatible = "zephyr,i2c-dump-allowlist";
+ 	       devices = <&rover_mm>;       
+ 	};
 };
