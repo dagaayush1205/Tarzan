@@ -2,3 +2,11 @@ config Tarzan
 	bool "Enable Tarzan"
 	help
 	  This option enables Tarzan as a Zephyr module.
+
+config TARZAN_LOG_LEVEL
+	int "Tarzan module log level"
+	default 3
+	range 0 4
+	help
+	  Sets the compile-time log level for the Tarzan module.
+	  0 = OFF, 1 = ERR, 2 = WRN, 3 = INF, 4 = DBG.
