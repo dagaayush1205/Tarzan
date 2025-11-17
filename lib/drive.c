@@ -3,7 +3,6 @@
 #include <Tarzan/lib/scurve_planner.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 
 #define LINEAR_V_MAX 1.5f
 #define LINEAR_A_MAX 0.8f
@@ -11,6 +10,51 @@
 #define ANGULAR_V_MAX 2.0f
 #define ANGULAR_A_MAX 5.0f
 #define ANGULAR_J_MAX 8.0f
+
+/* Wrapper around pwm_set_pulse_dt to ensure that pulse_width
+remains under max-min ranges
+params: 
+motor-> pwm pin to write 
+pulse_width-> the pwm value to write*/
+int pwm_motor_write(const struct pwm_motor *motor, uint32_t pulse_width)
+{
+	// wrapper around pwm_set_pulse_dt to ensure that pulse_width 
+	// remains under max-min range
+	if (pulse_width <= motor->min_pulse)
+		pulse_width = motor->min_pulse;
+	if (pulse_width >= motor->max_pulse)
+		pulse_width = motor->max_pulse;
+	
+	int ret = pwm_set_pulse_dt(&(motor->dev_spec), pulse_width);
+	return ret;
+}
+
+/* Velocity to PWM interpolation
+ * params:
+ * velocity-> input velocity
+ * vel_range-> input velocity range
+ * pwm_range-> output pwm range*/
+uint32_t velocity_pwm_interpolation(float velocity, float *vel_range, uint32_t *pwm_range)
+{
+	if (velocity > vel_range[1]) {
+		return pwm_range[1];
+	}
+
+	if (velocity < vel_range[0]) {
+		return pwm_range[0];
+	}
+
+	if (abs((int)velocity * 100) == 0) {
+		return (uint32_t)((pwm_range[0] + pwm_range[1]) / 2);
+	}
+
+	float dvel = vel_range[1] - vel_range[0];
+	float dpwm = pwm_range[1] - pwm_range[0];
+
+	uint32_t pwm_interp = pwm_range[0] + (dpwm / dvel) * (velocity - vel_range[0]);
+
+	return pwm_interp;
+}
 
 /* interpolates sbus channel value to velocity
  *param :
@@ -64,12 +108,18 @@ uint32_t sbus_pwm_interpolation(uint16_t channel, uint32_t *pwm_range,
   return pwm_interp;
 }
 
+/*initialize the diffdirve context variable
+ * param:
+ * config-> ptr to the config to init
+ * velocity_callback-> func to write the pwm val to motors
+ **/
 struct DiffDriveCtx *
 drive_init(struct DiffDriveConfig *config,
            int (*velocity_callback)(const float *velocity_buffer,
                                     int buffer_len, int wheels_per_side)) {
   struct DiffDriveCtx *ctx =
       (struct DiffDriveCtx *)malloc(sizeof(struct DiffDriveCtx));
+#include <zephyr/kernel.h>
   if (!ctx) {
     return NULL; // Return NULL if memory allocation fails
   }
@@ -77,7 +127,6 @@ drive_init(struct DiffDriveConfig *config,
   memcpy(&ctx->drive_config, config, sizeof(ctx->drive_config));
   ctx->velocity_callback = velocity_callback;
   ctx->previous_update_timestamp = k_uptime_get();
-  // ctx->drive_control.mode = MANUAL;
   ctx->drive_control.is_auto_active = false;
   ctx->drive_control.move_timer = 0.0f;
 
@@ -87,9 +136,14 @@ drive_init(struct DiffDriveConfig *config,
   jerk_limiter_init(&ctx->drive_control.angular_limiter, 0.0f, 0.0f,
                     ANGULAR_V_MAX, ANGULAR_A_MAX, ANGULAR_J_MAX);
 
-  return ctx; // Return the correctly initialized struct
+  return ctx;
 }
 
+/*differential kinematics func
+ * param:
+ * ctx-> differential drive context var
+ * command-> linear and angular command
+ * dt_sec-> time since last update*/
 int diffdrive_kine(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
                    float dt_sec) {
   int ret = 0;
@@ -120,10 +174,10 @@ int diffdrive_kine(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
   const int feedback_buffer_size = ctx->drive_config.wheels_per_side * 2;
 
   const float velocity_left =
-      (linear_command - angular_command * wheel_separation / 2.0) /
+      (linear_command - angular_command * wheel_separation / 2.0f) /
       left_wheel_radius;
   const float velocity_right =
-      (linear_command + angular_command * wheel_separation / 2.0) /
+      (linear_command + angular_command * wheel_separation / 2.0f) /
       right_wheel_radius;
 
   float *velocity_buffer =
