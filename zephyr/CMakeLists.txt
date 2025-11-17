@@ -7,7 +7,6 @@ if(CONFIG_Tarzan)
 	${Tarzan_DIR}/lib/sbus.c
 	${Tarzan_DIR}/lib/arm.c
 	${Tarzan_DIR}/lib/cobs.c
-	${Tarzan_DIR}/lib/scurve_planner.c
 	${Tarzan_DIR}/lib/madgwick.c
         )
 endif()
