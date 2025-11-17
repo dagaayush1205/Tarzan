@@ -3,17 +3,16 @@
 
 #include <math.h>
 #include <stdint.h>
-#include <stdio.h>
 
-typedef struct {
+struct jerk_limiter_t{
     float v_last;   // last output velocity (m/s or rad/s)
     float a_last;   // last output acceleration (m/s^2 or rad/s^2)
     float v_max;    // max velocity
     float a_max;    // max accel magnitude
     float j_max;    // max jerk magnitude
-} jerk_limiter_t;
+};
 
-static inline void jerk_limiter_init(jerk_limiter_t *lim,float v0,float a0,float v_max,float a_max,float j_max)
+static inline void jerk_limiter_init(struct jerk_limiter_t *lim,float v0,float a0,float v_max,float a_max,float j_max)
 {
     lim->v_last = v0;
     lim->a_last = a0;
@@ -22,7 +21,7 @@ static inline void jerk_limiter_init(jerk_limiter_t *lim,float v0,float a0,float
     lim->j_max  = j_max;
 }
 
-static inline float jerk_limiter_step(jerk_limiter_t *lim, float v_target, float dt_sec)
+static inline float jerk_limiter_step(struct jerk_limiter_t *lim, float v_target, float dt_sec)
 {
  
     if (v_target == 0.0f) {
