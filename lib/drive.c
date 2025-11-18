@@ -173,12 +173,14 @@ int diffdrive_update(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
                                         command.angular_z, dt_sec);
   }
 
-  if (angular_command != 0.0f) {
-    ctx->drive_control.yaw_error.desired_yaw = yaw;
-  } else if (linear_command != 0.0f) {
-    ctx->drive_control.yaw_error.yaw = yaw;
-    ctx->drive_control.yaw_error.yaw_rate = yaw_rate;
-    angular_command = lqr_yaw_correction(&ctx->drive_control.yaw_error);
+  if (ctx->drive_control.yaw_error.yaw_correction) {
+    if (angular_command != 0.0f) {
+      ctx->drive_control.yaw_error.desired_yaw = yaw;
+    } else if (linear_command != 0.0f) {
+      ctx->drive_control.yaw_error.yaw = yaw;
+      ctx->drive_control.yaw_error.yaw_rate = yaw_rate;
+      angular_command = lqr_yaw_correction(&ctx->drive_control.yaw_error);
+    }
   }
 
   const float wheel_separation = ctx->drive_config.wheel_separation_multiplier *

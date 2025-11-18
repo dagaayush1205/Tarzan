@@ -3,6 +3,7 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 static const float Iz =  1500.0f;
 static const float a = 0.1f;    // damping term
@@ -15,6 +16,7 @@ struct lqr{
   float yaw; 
   float yaw_rate;
   float desired_yaw;
+  bool yaw_correction;
 };
 
 static inline float wrap_pi(float angle) {
@@ -39,6 +41,8 @@ static inline void init_lqr_gains(struct lqr* lqr_ctx) {
 
   lqr_ctx->K[0] = p12 / r;
   lqr_ctx->K[1] = p22 / r;
+
+  lqr_ctx->yaw_correction = true; //set yaw correction flag
 }
 
 static inline float lqr_yaw_correction(struct lqr* lqr_ctx) {
