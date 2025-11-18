@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
@@ -71,9 +72,12 @@ static const struct gpio_dt_spec sbus_status_led =
     GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 const struct pwm_dt_spec error_led = PWM_DT_SPEC_GET(DT_ALIAS(pwm_led0));
 
-/* common msg struct for coms */
-struct cmd_msg {
+enum msg_type { AUTONOMOUS, INVERSE }; // msg type
+
+/* msg struct for rx coms */
+struct drive_msg {
   struct DiffDriveTwist auto_cmd;
+  enum msg_type type;
   uint32_t crc;
 };
 
@@ -83,15 +87,12 @@ struct base_station_msg {
   uint32_t crc;
 };
 
-/* decleration of check_crc func*/
-int check_crc(struct cmd_msg *);
-
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(sbus_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* defining gps message queue */
 K_MSGQ_DEFINE(gps_msgq, sizeof(uint8_t) * 100, 10, 1);
 /* defining cobs message queue */
-K_MSGQ_DEFINE(drive_msgq, sizeof(struct cmd_msg) + 2, 50, 1);
+K_MSGQ_DEFINE(drive_msgq, sizeof(struct drive_msg) + 2, 50, 1);
 
 /* workq dedicated thread */
 K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
@@ -114,6 +115,7 @@ struct drive_arg {
   struct DiffDriveConfig drive_config;
   struct DiffDriveTwist cmd;
   struct DiffDriveCtx *drive_init;
+  uint8_t drive_raw_buffer[sizeof(struct drive_msg) + 2];
   uint64_t time_last_drive_update;
   struct joint *lsm;
 } drive;
@@ -126,13 +128,19 @@ struct arm_arg {
 } arm;
 
 /* struct for communication */
+
 struct com_rx_arg {
   struct k_work cobs_rx_work_item;
-  struct cmd_msg msg_rx;
+  struct k_work *work_item;
+  void *msg_rx; // void* for dynamic type
   struct k_msgq *msgq_rx;
   int cobs_bytes_read;
-  uint8_t rx_buf[sizeof(struct cmd_msg) + 2];
-} drive_com = {.msgq_rx = &drive_msgq};
+  size_t MSG_LEN;
+  uint8_t *rx_buf;
+} drive_com = {.work_item = &drive.auto_drive_work_item,
+               .msgq_rx = &drive_msgq,
+               .MSG_LEN = sizeof(struct drive_msg) + 2,
+               .rx_buf = drive.drive_raw_buffer};
 
 struct com_tx_arg {
   struct k_work latte_panda_tx_work_item;
@@ -145,7 +153,6 @@ uint8_t packet[25];         // to store sbus packets
 uint8_t gps_mssg[100];      // to store gps mssg
 int sbus_bytes_read;        // to store number of sbus bytes read
 int gps_bytes_read;         // to store number of gps bytes read
-const int CMD_MSG_LEN = sizeof(struct cmd_msg) + 2; // len of inverse mssg
 const int BS_MSG_LEN =
     sizeof(struct base_station_msg) + 2; // len of base station mssg
 uint8_t bs_tx_buf[sizeof(struct base_station_msg) + 2] = {0};
@@ -159,14 +166,10 @@ uint16_t channel_range[] = {172, 1811};
 
 /* check if received cobs message is valid,
  * ret 0 if successfull */
-int check_crc(struct cmd_msg *msg) {
+uint32_t check_crc(uint8_t *msg, size_t MSG_LEN) {
   uint32_t valid_crc;
-  valid_crc =
-      crc32_ieee((uint8_t *)msg, sizeof(struct cmd_msg) - sizeof(msg->crc));
-  if (valid_crc != msg->crc) {
-    return 1;
-  }
-  return 0;
+  valid_crc = crc32_ieee((uint8_t *)msg, MSG_LEN - sizeof(uint32_t));
+  return valid_crc;
 }
 
 /* interrupt to store sbus data */
@@ -231,14 +234,14 @@ void cobs_cb(const struct device *dev, void *user_data) {
   while (uart_fifo_read(dev, &c, 1) == 1) {
     if (c == 0x00 && com_ctx->cobs_bytes_read > 0) {
       com_ctx->rx_buf[com_ctx->cobs_bytes_read] = 0;
-      if (com_ctx->cobs_bytes_read != (CMD_MSG_LEN - 1)) {
+      if (com_ctx->cobs_bytes_read != (com_ctx->MSG_LEN - 1)) {
         com_ctx->cobs_bytes_read = 0;
         continue;
       }
       k_msgq_put(com_ctx->msgq_rx, com_ctx->rx_buf, K_NO_WAIT);
       k_work_submit_to_queue(&work_q, &com_ctx->cobs_rx_work_item);
       com_ctx->cobs_bytes_read = 0;
-    } else if (com_ctx->cobs_bytes_read < sizeof(com_ctx->rx_buf)) {
+    } else if (com_ctx->cobs_bytes_read < com_ctx->MSG_LEN) {
       com_ctx->rx_buf[com_ctx->cobs_bytes_read++] = c;
     }
   }
@@ -271,25 +274,24 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
 
 /* received cobs message work handler */
 void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
-  uint8_t buf[CMD_MSG_LEN];
+
   struct com_rx_arg *com_info = CONTAINER_OF(
       cobs_rx_work_ptr, struct com_rx_arg,
       cobs_rx_work_item); // changed type here to check for conflicts
+                          //
+  uint8_t buf[com_info->MSG_LEN];
+
   k_msgq_get(com_info->msgq_rx, buf, K_MSEC(4));
-  cobs_decode_result result =
-      cobs_decode((void *)&(com_info->msg_rx), sizeof(com_info->msg_rx), buf,
-                  CMD_MSG_LEN - 1);
+
+  cobs_decode_result result = cobs_decode(
+      (com_info->msg_rx), sizeof(com_info->msg_rx), buf, com_info->MSG_LEN - 1);
   if (result.status != COBS_DECODE_OK) {
     LOG_ERR("COBS Decode Failed %d\n", result.status);
     return;
   }
-  if (check_crc(&com_info->msg_rx) != 0) {
-    LOG_ERR("Message from latte panda is corrupt\n");
-    return;
-  }
 
   // submit autonomous drive handler
-  k_work_submit_to_queue(&work_q, &(drive.auto_drive_work_item));
+  k_work_submit_to_queue(&work_q, com_info->work_item);
 }
 
 void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
@@ -351,10 +353,11 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   ch_reader_cnt++;
   k_mutex_unlock(&ch_reader_cnt_mutex);
 
-  // drive motor write
+  /* drive motor write */
   uint64_t drive_timestamp = k_uptime_get();
 
- /* TODO: add a fallback so that if madgwick faisl the command is still sent */
+  drive_info->drive_init->drive_control.autonomous = false;
+
   if (drive_info->time_last_drive_update >= DRIVE_UPDATE_MS) {
 
     drive_info->cmd.angular_z = sbus_velocity_interpolation(
@@ -363,7 +366,7 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
         channel[1], linear_velocity_range, channel_range);
 
     if (madgwick_filter(lsm_mag, lsm_imu, drive_info->lsm)) {
-
+      drive_info->drive_init->drive_control.yaw_error.yaw_correction = true;
       float yaw = drive_info->lsm->yaw;
       float yaw_rate = drive_info->lsm->gyro[2];
 
@@ -372,8 +375,14 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 
       drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
 
-    } else
+    } else {
+      // drive without yaw correction
+      drive_info->drive_init->drive_control.yaw_error.yaw_correction = false;
+      diffdrive_update(drive_info->drive_init, drive_info->cmd, DT_SEC, NAN,
+                       NAN);
+      drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
       LOG_ERR("Rover lsm9ds1: Madgwick filter update failed");
+    }
   }
 
   // tilt servo write
@@ -434,15 +443,25 @@ void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
   struct drive_arg *drive_info =
       CONTAINER_OF(auto_drive_work_ptr, struct drive_arg, auto_drive_work_item);
 
+  struct drive_msg *msg = (struct drive_msg *)drive_info->drive_raw_buffer;
+
+  // check crc
+  if (check_crc(drive_info->drive_raw_buffer, sizeof(struct drive_msg)) !=
+      msg->crc)
+    return;
+
   uint64_t drive_timestamp = k_uptime_get();
+
+  drive_info->drive_init->drive_control.autonomous = true;
 
   if (drive_info->time_last_drive_update >= DRIVE_UPDATE_MS) {
 
-    drive_info->cmd.angular_z = drive_com.msg_rx.auto_cmd.angular_z;
-    drive_info->cmd.linear_x = drive_com.msg_rx.auto_cmd.linear_x;
+    drive_info->cmd.linear_x = msg->auto_cmd.linear_x;
+    drive_info->cmd.angular_z = msg->auto_cmd.angular_z;
 
     if (madgwick_filter(lsm_mag, lsm_imu, drive_info->lsm)) {
 
+      drive_info->drive_init->drive_control.yaw_error.yaw_correction = true;
       float yaw = drive_info->lsm->yaw;
       float yaw_rate = drive_info->lsm->gyro[2];
 
@@ -451,8 +470,12 @@ void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
 
       drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
 
-    } else
+    } else {
+      drive_info->drive_init->drive_control.yaw_error.yaw_correction = false;
+      diffdrive_update(drive_info->drive_init, drive_info->cmd, DT_SEC, NAN,
+                       NAN);
       LOG_ERR("Rover lsm9ds1: Madgwick filter update failed");
+    }
   }
 }
 
