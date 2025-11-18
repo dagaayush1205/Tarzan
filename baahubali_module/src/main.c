@@ -5,14 +5,24 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/drivers/sensor.h>
+#include <Tarzan/lib/arm.h>
+#include <Tarzan/lib/cobs.h>
 
+static struct imu_data imu_used = {
+   .error_code=IMU_NOT_READY,
+   .prev_time= 0.0,
+   .pitch= 0.0,
+   .roll= 0.0
+};
+#define TX_BUF_LEN 512
 static const struct device *imu_joint = DEVICE_DT_GET(DT_ALIAS(imu_joint));
 
-static const struct device *const pico_uart = DEVICE_DT_GET(DT_ALIAS(pico_uart));
+const struct device *uart0_dev = DEVICE_DT_GET(DT_ALIAS(pico_uart));
+// const struct device *uart1_dev = DEVICE_DT_GET(DT_NODELABEL(uart1));
 
 #define M_PI 3.14159265358979323846
 
-float accel_offset[3], gyro_offset[3];
+//float accel_offset[3], gyro_offset[3];
 float angle_pitch = 0.0, angle_roll = 0.0;
 float k = 0.90; // k here is tau
 float target_angle = -45;
@@ -21,63 +31,94 @@ uint64_t prev_time = 0;
 float true_acc[3] = {0, 0, -9.8};
 float true_gyro[3] = {0, 0, 0};
 
-int calibration(const struct device *dev);
-int process_pitch_roll(const struct device *dev);
+int calibration_mpu(const struct device *dev, struct imu_data *data);
+int process_pitch_roll_mpu(const struct device *dev, struct imu_data *data);
+void send_string_poll(const struct device *uart_dev, const char *str);
 
 int main(void)
 {
-    if (!device_is_ready(pico_uart)) {
-    printk("Uart device not ready\n");
-  }
-    if (!device_is_ready(imu_joint) {
+    int ret;
+    char tx_buf[TX_BUF_LEN];
+    if (!device_is_ready(uart0_dev)) {
+      printk("Uart0  device not ready\n");
+      return -1;
+    }
+    // if (!device_is_ready(uart1_dev)) {
+    //   printk("uart1 device not ready\n");
+    //   return -1;
+    // }
+
+
+    if (!device_is_ready(imu_joint)) {
         printk("IMU not ready.\n");
     }
-    if (calibration(imu_joint)) {
-    printk("Calibration failed for device %s\n", base->name);
+    if (calibration_mpu(imu_joint, &imu_used)) {
+    printk("Calibration failed for device %s\n", imu_joint->name);
+    }
+    while(1)
+  {
+    ret = process_pitch_roll_mpu(imu_joint, &imu_used); 
+    cobs_encode_result result = cobs_encode(tx_buf, TX_BUF_LEN, &imu_used, sizeof(struct imu_data)); 
+    tx_buf[TX_BUF_LEN - 1] = 0x00;
+    for (int i = 0; i < TX_BUF_LEN; i++) {
+      uart_poll_out(uart0_dev, tx_buf[i]);
+    }
   }
 }
-int calibration(const struct device *dev) {
+
+int calibration_mpu(const struct device *dev, struct imu_data *data) {
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
 
   for (int i = 0; i < 1000; i++) {
 
     int rc = sensor_sample_fetch(dev);
+     if(rc!=0) {
+       data->error_code= IMU_FETCH_FAILED;
+       return -1;
+     }
+    
+     rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+     if(rc!=0) {
+       data->error_code= IMU_FETCH_FAILED;
+       return -1;
+     }
 
-    if (rc == 0)
-      rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
-
-    if (rc == 0)
       rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
+     if(rc!=0) {
+      data->error_code= IMU_FETCH_FAILED;
+      return -1;
+    }
 
     for (int i = 0; i < 3; i++) {
-      accel_offset[i] += (sensor_value_to_double(&accel[i]) - true_acc[i]);
-      gyro_offset[i] += (sensor_value_to_double(&gyro[i]) - true_gyro[i]);
+      data->accel_offset[i] += (sensor_value_to_double(&accel[i]) - true_acc[i]);
+      data->gyro_offset[i] += (sensor_value_to_double(&gyro[i]) - true_gyro[i]);
     }
     k_sleep(K_MSEC(1));
   }
+  data->error_code= IMU_OK;
   for (int i = 0; i < 3; i++) {
-    accel_offset[i] = accel_offset[i] / 1000.0;
-    gyro_offset[i] = gyro_offset[i] / 1000.0;
+    data->accel_offset[i] = data->accel_offset[i] / 1000.0;
+    data->gyro_offset[i] = data->gyro_offset[i] / 1000.0;
   }
 
   printk("Calibration done\n");
-  printk("accel_offset: %f %f %f\n", accel_offset[0], accel_offset[1],
-         accel_offset[2]);
-  printk("gyroOffset: %f %f %f\n", gyro_offset[0], gyro_offset[1],
-         gyro_offset[2]);
+  printk("accel_offset: %f %f %f\n", data->accel_offset[0], data->accel_offset[1],
+         data->accel_offset[2]);
+  printk("gyroOffset: %f %f %f\n", data->gyro_offset[0], data->gyro_offset[1],
+         data->gyro_offset[2]);
 
   return 0;
 }
 
-int process_pitch_roll(const struct device *dev, struct joint *IMU) {
+int process_pitch_roll_mpu(const struct device *dev, struct imu_data *data) {
 
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
 
   uint64_t current_time = k_uptime_get();
 
-  double dt = (current_time - IMU->prev_time) / 1000.0;
+  double dt = (double)(current_time - data->prev_time) / 1000.0;
 
   int rc = sensor_sample_fetch(dev);
 
@@ -85,31 +126,42 @@ int process_pitch_roll(const struct device *dev, struct joint *IMU) {
     rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
   if (rc == 0)
     rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
+  if(rc !=0)
+  {
+    data->error_code= IMU_FETCH_FAILED;
+    return -1;
+  }
 
-  IMU->prev_time = current_time;
-  IMU->accel[0] = sensor_value_to_double(&accel[0]);
-  IMU->accel[1] = sensor_value_to_double(&accel[1]);
-  IMU->accel[2] = sensor_value_to_double(&accel[2]);
-  IMU->gyro[0] = sensor_value_to_double(&gyro[0]) - IMU->gyro_offset[0];
-  IMU->gyro[1] = sensor_value_to_double(&gyro[1]) - IMU->gyro_offset[1];
-  IMU->gyro[2] = sensor_value_to_double(&gyro[2]) - IMU->gyro_offset[2];
+  data->prev_time = current_time;
+  data->accel[0] = sensor_value_to_double(&accel[0]);
+  data->accel[1] = sensor_value_to_double(&accel[1]);
+  data->accel[2] = sensor_value_to_double(&accel[2]);
+  data->gyro[0] = sensor_value_to_double(&gyro[0]) - data->gyro_offset[0];
+  data->gyro[1] = sensor_value_to_double(&gyro[1]) - data->gyro_offset[1];
+  data->gyro[2] = sensor_value_to_double(&gyro[2]) - data->gyro_offset[2];
 
-  // printk("%03.3f %03.3f %03.3f | %03.3f %03.3f %03.3f\n", IMU->accel[0],
-  // IMU->accel[1], IMU->accel[2], IMU->gyro[0], IMU->gyro[1], IMU->gyro[2]);
+  // printk("%03.3f %03.3f %03.3f | %03.3f %03.3f %03.3f\n", data->accel[0],
+  // data->accel[1], data->accel[2], data->gyro[0], data->gyro[1], data->gyro[2]);
 
-  if (rc == 0) {
-
-    double pitch_acc = (atan2(-1 * IMU->accel[0], sqrt(pow(IMU->accel[1], 2) +
-                                                       pow(IMU->accel[2], 2))));
-    double roll_acc = (atan2(-1 * IMU->accel[1], sqrt(pow(IMU->accel[2], 2) +
-                                                      pow(IMU->accel[0], 2))));
-    IMU->pitch =
-        TAU * (IMU->pitch + (IMU->gyro[1]) * (dt)) + (1 - TAU) * pitch_acc;
-    IMU->roll =
-        TAU * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - TAU) * roll_acc;
-  } else {
+  if (rc == 0) 
+  {
+    double pitch_acc = (atan2(-1 * data->accel[0], sqrt(pow(data->accel[1], 2) +
+                                                       pow(data->accel[2], 2))));
+    double roll_acc = (atan2(-1 * data->accel[1], sqrt(pow(data->accel[2], 2) +
+                                                      pow(data->accel[0], 2))));
+    data->pitch =k * (data->pitch + (data->gyro[1]) * (dt)) + (1 -k) * pitch_acc;
+    data->roll =k * (data->roll + (data->gyro[2]) * (dt)) + (1 - k) * roll_acc;
+    data->error_code= IMU_OK;
+  } 
+  else 
+  {
     return 1;
   }
   return 0;
 }
-
+void send_string_poll(const struct device *uart_dev, const char *str)
+{
+	for (int i = 0; str[i] != '\0'; i++) {
+		uart_poll_out(uart_dev, str[i]);
+	}
+}

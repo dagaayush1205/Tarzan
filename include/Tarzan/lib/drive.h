@@ -35,6 +35,7 @@ struct DiffDriveCtrl {
   struct jerk_limiter_t linear_limiter;
   struct jerk_limiter_t angular_limiter;
   struct lqr yaw_error;
+  bool autonomous;
 };
 
 struct DiffDriveCtx {

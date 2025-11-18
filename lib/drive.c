@@ -135,9 +135,18 @@ drive_init(struct DiffDriveConfig *config,
   jerk_limiter_init(&ctx->drive_control.angular_limiter, 0.0f, 0.0f,
                     ANGULAR_V_MAX, ANGULAR_A_MAX, ANGULAR_J_MAX);
 
+<<<<<<< HEAD
   // Initialize lqr gains 
   init_lqr_gains(&ctx->drive_control.yaw_error);
 
+=======
+  // Initialize lqr gains
+  init_lqr_gains(&ctx->drive_control.yaw_error);
+
+  // set autonomous flag
+  ctx->drive_control.autonomous = false;
+
+>>>>>>> r26_mods
   return ctx;
 }
 
@@ -160,10 +169,25 @@ int diffdrive_update(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
   }
 
   // MANUAL MODE
-  linear_command = jerk_limiter_step(&ctx->drive_control.linear_limiter,
-                                     command.linear_x, dt_sec);
-  angular_command = jerk_limiter_step(&ctx->drive_control.angular_limiter,
-                                      command.angular_z, dt_sec);
+  if (ctx->drive_control.autonomous) {
+    linear_command = command.linear_x;
+    angular_command = command.angular_z;
+  } else {
+    linear_command = jerk_limiter_step(&ctx->drive_control.linear_limiter,
+                                       command.linear_x, dt_sec);
+    angular_command = jerk_limiter_step(&ctx->drive_control.angular_limiter,
+                                        command.angular_z, dt_sec);
+  }
+
+  if (ctx->drive_control.yaw_error.yaw_correction) {
+    if (angular_command != 0.0f) {
+      ctx->drive_control.yaw_error.desired_yaw = yaw;
+    } else if (linear_command != 0.0f) {
+      ctx->drive_control.yaw_error.yaw = yaw;
+      ctx->drive_control.yaw_error.yaw_rate = yaw_rate;
+      angular_command = lqr_yaw_correction(&ctx->drive_control.yaw_error);
+    }
+  }
 
   if(angular_command!=0.0f){
 	  ctx->drive_control.yaw_error.desired_yaw = yaw;

@@ -44,13 +44,24 @@ struct inverse_msg {
   float y;
   float z;
 };
-/* imu data */
-struct imu_data {
-  float accel[3];
-  float gyro[3];
-  float mag[3];
-  float gyro_offset[3];
+/* imu data */ 
+struct imu_data { 
+  enum {
+        IMU_OK = 0,
+        IMU_NOT_READY,
+        IMU_CALIBRATION_FAILED,
+        IMU_FETCH_FAILED
+  } error_code;
+  double accel[3]; 
+  double gyro[3];
+  double mag[3];
+  double gyro_offset[3];
+  double accel_offset[3];
+  uint64_t prev_time;
+  double pitch;
+  double roll;
 };
+
 /* imu data msg */
 struct imu_msg {
   struct imu_data baseLink;
