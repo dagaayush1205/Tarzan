@@ -354,6 +354,7 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   // drive motor write
   uint64_t drive_timestamp = k_uptime_get();
 
+ /* TODO: add a fallback so that if madgwick faisl the command is still sent */
   if (drive_info->time_last_drive_update >= DRIVE_UPDATE_MS) {
 
     drive_info->cmd.angular_z = sbus_velocity_interpolation(
