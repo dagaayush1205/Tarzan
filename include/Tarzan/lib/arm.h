@@ -73,9 +73,9 @@ struct imu_msg {
 
 int Stepper_motor_write(const struct stepper *motor, int dir, int pos);
 
-int complementary_filter(const struct device *data, struct joint *IMU);
+int complementary_filter(const struct device *dev, struct joint *data);
 
-int calibrate_gyro(const struct device *dev, struct joint *IMU);
+int calibrate_gyro(const struct device *dev, struct joint *data);
 
 int madgwick_filter(const struct device *const mag_dev,
                     const struct device *const imu_dev, struct joint *data);
