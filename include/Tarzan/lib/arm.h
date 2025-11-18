@@ -9,8 +9,8 @@
 #define TAU 0.90f
 
 struct stepper {
-	const struct gpio_dt_spec dir;
-	const struct gpio_dt_spec step;
+  const struct gpio_dt_spec dir;
+  const struct gpio_dt_spec step;
 };
 
 enum StepperDirection {
@@ -28,8 +28,10 @@ struct joint {
   float mag[3];
   float pitch;
   float roll;
-  uint64_t prev_time;
+  float yaw;
   float gyro_offset[3];
+  float mag_offset[3];
+  uint64_t prev_time;
 };
 /* inverse message */
 struct inverse_msg {
@@ -76,8 +78,7 @@ int complementary_filter(const struct device *data, struct joint *IMU);
 int calibrate_gyro(const struct device *dev, struct joint *IMU);
 
 int madgwick_filter(const struct device *const mag_dev,
-                    const struct device *const imu_dev, struct joint *data,
-                    uint64_t dt);
+                    const struct device *const imu_dev, struct joint *data);
 
 int calibrate_magnetometer(const struct device *dev, struct joint *data);
 

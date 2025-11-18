@@ -83,35 +83,35 @@ int complementary_filter(const struct device *dev, struct joint *IMU) {
 
   float dt = (current_time - IMU->prev_time) / 1000.0;
 
-  int rc = sensor_sample_fetch(dev);
+  if (!sensor_sample_fetch(dev)) {
 
-  if (rc == 0)
-    rc = sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
-  if (rc == 0)
-    rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
+    if (sensor_channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel))
+      return 1;
+    if (sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro))
+      return 1;
 
-  IMU->prev_time = current_time;
-  IMU->accel[0] = sensor_value_to_float(&accel[0]);
-  IMU->accel[1] = sensor_value_to_float(&accel[1]);
-  IMU->accel[2] = sensor_value_to_float(&accel[2]);
-  IMU->gyro[0] = sensor_value_to_float(&gyro[0]) - IMU->gyro_offset[0];
-  IMU->gyro[1] = sensor_value_to_float(&gyro[1]) - IMU->gyro_offset[1];
-  IMU->gyro[2] = sensor_value_to_float(&gyro[2]) - IMU->gyro_offset[2];
+    IMU->prev_time = current_time;
+    IMU->accel[0] = sensor_value_to_float(&accel[0]);
+    IMU->accel[1] = sensor_value_to_float(&accel[1]);
+    IMU->accel[2] = sensor_value_to_float(&accel[2]);
+    IMU->gyro[0] = sensor_value_to_float(&gyro[0]) - IMU->gyro_offset[0];
+    IMU->gyro[1] = sensor_value_to_float(&gyro[1]) - IMU->gyro_offset[1];
+    IMU->gyro[2] = sensor_value_to_float(&gyro[2]) - IMU->gyro_offset[2];
 
-  if (rc == 0) {
-
-    float pitch_acc = (atan2f(-1 * IMU->accel[0], sqrtf(powf(IMU->accel[1], 2) +
-                                                      powf(IMU->accel[2], 2))));
-    float roll_acc = (atan2f(-1 * IMU->accel[1], sqrtf(powf(IMU->accel[2], 2) +
-                                                     powf(IMU->accel[0], 2))));
+    float pitch_acc =
+        (atan2f(-1 * IMU->accel[0],
+                sqrtf(powf(IMU->accel[1], 2) + powf(IMU->accel[2], 2))));
+    float roll_acc =
+        (atan2f(-1 * IMU->accel[1],
+                sqrtf(powf(IMU->accel[2], 2) + powf(IMU->accel[0], 2))));
     IMU->pitch =
         TAU * (IMU->pitch + (IMU->gyro[1]) * (dt)) + (1 - TAU) * pitch_acc;
     IMU->roll =
         TAU * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - TAU) * roll_acc;
-  } else {
-    return 1;
+
+    return 0;
   }
-  return 0;
+  return 1;
 }
 
 /* proportional feedback update for stepper motor
@@ -137,30 +137,35 @@ enum StepperDirection update_proportional(float target_angel,
  * data - pointer to struct joint
  * returns: 0 if successfull*/
 int madgwick_filter(const struct device *const mag_dev,
-                    const struct device *const imu_dev, struct joint *data,
-                    uint64_t dt) {
+                    const struct device *const imu_dev, struct joint *data) {
+
+  struct sensor_value Mag[3];
+  struct sensor_value Accel[3];
+  struct sensor_value Gyro[3];
+  float accel[3], gyro[3], mag[3];
+
+  uint64_t current_time = k_uptime_get();
+
+  float dt = (current_time - data->prev_time) / 1000.0;
 
   if (dt <= 0.0f || dt > 0.1f) {
     k_msleep(1);
   }
 
-  struct sensor_value Mag[3];
-  struct sensor_value Accel[3];
-  struct sensor_value Gyro[3];
+  if (!sensor_sample_fetch(mag_dev) && !sensor_sample_fetch(imu_dev)) {
+    if (sensor_channel_get(mag_dev, SENSOR_CHAN_MAGN_XYZ, Mag))
+      return 1;
+    if (sensor_channel_get(imu_dev, SENSOR_CHAN_ACCEL_XYZ, Gyro))
+      return 1;
+    if (sensor_channel_get(imu_dev, SENSOR_CHAN_GYRO_XYZ, Accel))
+      return 1;
 
-  float accel[3], gyro[3], mag[3];
-
-  int rc_mag = sensor_sample_fetch(mag_dev);
-  int rc_imu = sensor_sample_fetch(imu_dev);
-  if (rc_mag == 0 && rc_imu == 0) {
-    sensor_channel_get(mag_dev, SENSOR_CHAN_MAGN_XYZ, Mag);
-    sensor_channel_get(imu_dev, SENSOR_CHAN_ACCEL_XYZ, Gyro);
-    sensor_channel_get(imu_dev, SENSOR_CHAN_GYRO_XYZ, Accel);
-    for (int i = 1; i <= 3; i++) {
+    for (int i = 0; i < 3; i++) {
       accel[i] = sensor_value_to_float(&Accel[i]);
       gyro[i] = sensor_value_to_float(&Gyro[i]);
       mag[i] = sensor_value_to_float(&Mag[i]);
     }
+
     imu_filter(accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2], mag[0],
                mag[1], mag[2], dt);
 
@@ -168,6 +173,7 @@ int madgwick_filter(const struct device *const mag_dev,
 
     return 0;
   }
+
   return 1;
 }
 
@@ -177,6 +183,7 @@ int madgwick_filter(const struct device *const mag_dev,
  * data - pointer to struct joint
  * returns: 0 if successfull*/
 int calibrate_magnetometer(const struct device *dev, struct joint *data) {
+
   struct sensor_value mag[3];
   int rc = 0;
 

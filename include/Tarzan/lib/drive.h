@@ -63,6 +63,6 @@ drive_init(struct DiffDriveConfig *config,
            int (*velocity_callback)(const float *velocity_buffer,
                                     int buffer_len, int wheels_per_side));
 
-int diffdrive_kine(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
+int diffdrive_update(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
                    float dt_sec);
 #endif
