@@ -135,18 +135,12 @@ drive_init(struct DiffDriveConfig *config,
   jerk_limiter_init(&ctx->drive_control.angular_limiter, 0.0f, 0.0f,
                     ANGULAR_V_MAX, ANGULAR_A_MAX, ANGULAR_J_MAX);
 
-<<<<<<< HEAD
-  // Initialize lqr gains 
-  init_lqr_gains(&ctx->drive_control.yaw_error);
-
-=======
   // Initialize lqr gains
   init_lqr_gains(&ctx->drive_control.yaw_error);
 
   // set autonomous flag
   ctx->drive_control.autonomous = false;
 
->>>>>>> r26_mods
   return ctx;
 }
 
