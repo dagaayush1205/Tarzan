@@ -41,9 +41,9 @@ int Stepper_motor_write(const struct stepper *motor, int dir, int pos) {
 /*Calibration for imu
  * param:
  * dev: imu device
- * IMU: struct joint
+ * data: struct joint
  * returns: 0 if calibration succesfull*/
-int calibrate_gyro(const struct device *dev, struct joint *IMU) {
+int calibrate_gyro(const struct device *dev, struct joint *data) {
   struct sensor_value gyro[3];
   float true_gyro = 0;
   int rc;
@@ -55,14 +55,14 @@ int calibrate_gyro(const struct device *dev, struct joint *IMU) {
       rc = sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro);
 
       for (int i = 0; i < 3; i++)
-        IMU->gyro_offset[i] += (sensor_value_to_float(&gyro[i]) - true_gyro);
+        data->gyro_offset[i] += (sensor_value_to_float(&gyro[i]) - true_gyro);
       k_sleep(K_MSEC(1));
     } else
       break;
   }
   if (rc == 0) {
     for (int i = 0; i < 3; i++)
-      IMU->gyro_offset[i] = IMU->gyro_offset[i] / 1000.0f;
+      data->gyro_offset[i] = data->gyro_offset[i] / 1000.0f;
   } else
     return 1;
 
@@ -72,16 +72,16 @@ int calibrate_gyro(const struct device *dev, struct joint *IMU) {
 /* complementary filter to compute pitch & roll
  * param:
  * dev: imu device
- * IMU: struct joint
+ * data: struct joint
  * returns: 0 if succesfull*/
-int complementary_filter(const struct device *dev, struct joint *IMU) {
+int complementary_filter(const struct device *dev, struct joint *data) {
 
   struct sensor_value accel[3];
   struct sensor_value gyro[3];
 
   uint64_t current_time = k_uptime_get();
 
-  float dt = (current_time - IMU->prev_time) / 1000.0;
+  float dt = (current_time - data->prev_time) / 1000.0;
 
   if (!sensor_sample_fetch(dev)) {
 
@@ -90,24 +90,24 @@ int complementary_filter(const struct device *dev, struct joint *IMU) {
     if (sensor_channel_get(dev, SENSOR_CHAN_GYRO_XYZ, gyro))
       return 1;
 
-    IMU->prev_time = current_time;
-    IMU->accel[0] = sensor_value_to_float(&accel[0]);
-    IMU->accel[1] = sensor_value_to_float(&accel[1]);
-    IMU->accel[2] = sensor_value_to_float(&accel[2]);
-    IMU->gyro[0] = sensor_value_to_float(&gyro[0]) - IMU->gyro_offset[0];
-    IMU->gyro[1] = sensor_value_to_float(&gyro[1]) - IMU->gyro_offset[1];
-    IMU->gyro[2] = sensor_value_to_float(&gyro[2]) - IMU->gyro_offset[2];
+    data->prev_time = current_time;
+    data->accel[0] = sensor_value_to_float(&accel[0]);
+    data->accel[1] = sensor_value_to_float(&accel[1]);
+    data->accel[2] = sensor_value_to_float(&accel[2]);
+    data->gyro[0] = sensor_value_to_float(&gyro[0]) - data->gyro_offset[0];
+    data->gyro[1] = sensor_value_to_float(&gyro[1]) - data->gyro_offset[1];
+    data->gyro[2] = sensor_value_to_float(&gyro[2]) - data->gyro_offset[2];
 
     float pitch_acc =
-        (atan2f(-1 * IMU->accel[0],
-                sqrtf(powf(IMU->accel[1], 2) + powf(IMU->accel[2], 2))));
+        (atan2f(-1 * data->accel[0],
+                sqrtf(powf(data->accel[1], 2) + powf(data->accel[2], 2))));
     float roll_acc =
-        (atan2f(-1 * IMU->accel[1],
-                sqrtf(powf(IMU->accel[2], 2) + powf(IMU->accel[0], 2))));
-    IMU->pitch =
-        TAU * (IMU->pitch + (IMU->gyro[1]) * (dt)) + (1 - TAU) * pitch_acc;
-    IMU->roll =
-        TAU * (IMU->roll + (IMU->gyro[2]) * (dt)) + (1 - TAU) * roll_acc;
+        (atan2f(-1 * data->accel[1],
+                sqrtf(powf(data->accel[2], 2) + powf(data->accel[0], 2))));
+    data->pitch =
+        TAU * (data->pitch + (data->gyro[1]) * (dt)) + (1 - TAU) * pitch_acc;
+    data->roll =
+        TAU * (data->roll + (data->gyro[2]) * (dt)) + (1 - TAU) * roll_acc;
 
     return 0;
   }
@@ -142,7 +142,6 @@ int madgwick_filter(const struct device *const mag_dev,
   struct sensor_value Mag[3];
   struct sensor_value Accel[3];
   struct sensor_value Gyro[3];
-  float accel[3], gyro[3], mag[3];
 
   uint64_t current_time = k_uptime_get();
 
@@ -161,13 +160,14 @@ int madgwick_filter(const struct device *const mag_dev,
       return 1;
 
     for (int i = 0; i < 3; i++) {
-      accel[i] = sensor_value_to_float(&Accel[i]);
-      gyro[i] = sensor_value_to_float(&Gyro[i]);
-      mag[i] = sensor_value_to_float(&Mag[i]);
+      data->accel[i] = sensor_value_to_float(&Accel[i]);
+      data->gyro[i] = sensor_value_to_float(&Gyro[i]);
+      data->mag[i] = sensor_value_to_float(&Mag[i]);
     }
 
-    imu_filter(accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2], mag[0],
-               mag[1], mag[2], dt);
+    imu_filter(data->accel[0], data->accel[1], data->accel[2], data->gyro[0],
+               data->gyro[1], data->gyro[2], data->mag[0], data->mag[1],
+               data->mag[2], dt);
 
     eulerAngles(q_est, &data->roll, &data->pitch, &data->yaw);
 
