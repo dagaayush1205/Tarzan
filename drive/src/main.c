@@ -72,12 +72,9 @@ static const struct gpio_dt_spec sbus_status_led =
     GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 const struct pwm_dt_spec error_led = PWM_DT_SPEC_GET(DT_ALIAS(pwm_led0));
 
-enum msg_type { AUTONOMOUS, INVERSE }; // msg type
-
 /* msg struct for rx coms */
 struct drive_msg {
   struct DiffDriveTwist auto_cmd;
-  enum msg_type type;
   uint32_t crc;
 };
 
