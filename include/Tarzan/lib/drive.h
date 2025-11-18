@@ -1,8 +1,33 @@
-#pragma once
+#ifndef DRIVE_H
+#define DRIVE_H
 #include <Tarzan/lib/jerk_limiter.h>
 #include <Tarzan/lib/scurve_planner.h>
-#include <kyvernitis/lib/kyvernitis.h>
 #include <stdint.h>
+#include <zephyr/drivers/pwm.h>
+#include <zephyr/kernel.h>
+
+struct pwm_motor {
+  const struct pwm_dt_spec dev_spec;
+  const uint32_t min_pulse;
+  const uint32_t max_pulse;
+};
+
+struct DiffDriveTwist {
+  float linear_x;
+  float angular_z;
+};
+
+struct DiffDriveConfig {
+  float wheel_separation;
+  int wheels_per_side; // actually 2, but both are controlled by 1 signal
+  float wheel_radius;
+
+  int64_t command_timeout_seconds;
+  float wheel_separation_multiplier;
+  float left_wheel_radius_multiplier;
+  float right_wheel_radius_multiplier;
+  uint8_t update_type;
+};
 
 struct DiffDriveCtrl {
   jerk_limiter_t linear_limiter;
@@ -23,6 +48,10 @@ struct DiffDriveCtx {
 
 enum msg_type { AUTONOMOUS, INVERSE, IMU };
 
+int pwm_motor_write(const struct pwm_motor *motor, uint32_t pulse_width);
+
+uint32_t velocity_pwm_interpolation(float velocity, float *vel_range, uint32_t *pwm_range);
+
 float sbus_velocity_interpolation(uint16_t channel, float *velocity_range,
                                   uint16_t *channel_range);
 
@@ -36,3 +65,4 @@ drive_init(struct DiffDriveConfig *config,
 
 int diffdrive_kine(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
                    float dt_sec);
+#endif
