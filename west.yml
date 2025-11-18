@@ -14,13 +14,12 @@ manifest:
           - hal_rpi_pico 
           - segger
 
-    - name: kyvernitis 
-      url: https://github.com/waseemr02/kyvernitis
-      revision: add-mother-inverse
-      path: modules/lib/kyvernitis
-      import: true
 
-
+    # - name: kyvernitis 
+    #   url: https://github.com/waseemr02/kyvernitis
+    #   revision: add-mother-inverse
+    #   path: modules/lib/kyvernitis
+    #   import: true
 
     - name: hal_st
       path: modules/hal/st
