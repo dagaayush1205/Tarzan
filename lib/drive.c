@@ -1,9 +1,7 @@
-#include "Tarzan/lib/lqr.h"
-#include <Tarzan/lib/drive.h>
-#include <Tarzan/lib/jerk_limiter.h>
-#include <Tarzan/lib/scurve_planner.h>
 #include <stdint.h>
 #include <stdlib.h>
+
+#include <Tarzan/lib/drive.h>
 
 #define LINEAR_V_MAX 1.5f
 #define LINEAR_A_MAX 0.8f

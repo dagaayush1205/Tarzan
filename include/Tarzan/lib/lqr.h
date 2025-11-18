@@ -4,11 +4,11 @@
 #include <math.h>
 #include <stdint.h>
 
-#define Iz 1500.0f
-#define a 0.1f    // damping term
-#define q1 100.0f // wt yaw error
-#define q2 1.0f   // wt yaw rate
-#define r 1.0f    // wt control effort
+static const float Iz =  1500.0f;
+static const float a = 0.1f;    // damping term
+static const float q1 = 100.0f; // wt yaw error
+static const float q2 = 1.0f;   // wt yaw rate
+static const float r = 1.0f;    // wt control effort
 
 struct lqr{
   float K[2]; // k1 k2
@@ -17,13 +17,13 @@ struct lqr{
   float desired_yaw;
 };
 
-static inline float wrap_pi(float ang) {
+static inline float wrap_pi(float angle) {
   const float PI = 3.14159265359f;
-  while (ang > PI)
-    ang -= 2.0f * PI;
-  while (ang < -PI)
-    ang += 2.0f * PI;
-  return ang;
+  while (angle > PI)
+    angle -= 2.0f * PI;
+  while (angle < -PI)
+    angle += 2.0f * PI;
+  return angle;
 }
 
 static inline void init_lqr_gains(struct lqr* lqr_ctx) {
@@ -41,7 +41,7 @@ static inline void init_lqr_gains(struct lqr* lqr_ctx) {
   lqr_ctx->K[1] = p22 / r;
 }
 
-float inline lqr_yaw_correction(struct lqr* lqr_ctx) {
+static inline float lqr_yaw_correction(struct lqr* lqr_ctx) {
 
   float err = wrap_pi(lqr_ctx->yaw - lqr_ctx->desired_yaw);
 
