@@ -6,61 +6,37 @@
 			pwms  = <&pwm2 1 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
+			channel = <0>;
 		};
 		sabertooth1_2: pwm_2 {
 			pwms  = <&pwm2 2 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
+			channel = <1>; 
 		};
 		cytron1_1: pwm_3 {
-			pwms  = <&pwm2 3 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
-			min-pulse = <PWM_USEC(1100)>;
-			max-pulse = <PWM_USEC(1900)>;
-		};
-		cytron1_2: pwm_4 {
-			pwms  = <&pwm2 4 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
-			min-pulse = <PWM_USEC(1100)>;
-			max-pulse = <PWM_USEC(1900)>;
-		};
-		roboclaw_1: pwm_5 {
 			pwms  = <&pwm4 1 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
+			channel = <8>; 
 		};
-		roboclaw_2: pwm_6 {
+		cytron1_2: pwm_4 {
 			pwms  = <&pwm4 2 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
+			channel = <10>; 
 		};
 		servo_1: pwm_7 {
 			pwms  = <&pwm4 3 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(500)>;
 			max-pulse = <PWM_USEC(2500)>;
+			channel = <6>; 
 		};
 		servo_2: pwm_8 {
 			pwms  = <&pwm3 1 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(500)>;
 			max-pulse = <PWM_USEC(2500)>;
-		};
-		servo_3: pwm_9 {
-			pwms  = <&pwm3 2 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
-			min-pulse = <PWM_USEC(500)>;
-			max-pulse = <PWM_USEC(2500)>;
-		};
-		servo_4: pwm_10 {
-			pwms  = <&pwm13 1 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
-			min-pulse = <PWM_USEC(500)>;
-			max-pulse = <PWM_USEC(2500)>;
-		};
-		cycloidal_1: pwm_11 {
-			pwms  = <&pwm15 1 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
-			min-pulse = <PWM_USEC(500)>;
-			max-pulse = <PWM_USEC(2500)>;
-		};
-		cycloidal_2: pwm_12 {
-			pwms  = <&pwm15 2 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
-			min-pulse = <PWM_USEC(500)>;
-			max-pulse = <PWM_USEC(2500)>;
+			channel = <7>; 
 		};
 	};
 
@@ -95,27 +71,16 @@
 		};
 	};
 
-	switches: limit_switches {
-			  compatible = "gpio-keys";
-			  switch1: switch_1 {
-				gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
-		 	};
-	};
-
 	aliases {
 			latte-panda-uart = &cdc_acm_uart0; 
 			telemetry-uart = &usart2;
 			sbus-uart = &usart6;
      			gps-uart = &usart3;
-			imu-uart = &uart7; 
-      			mag = &lsm9ds1_mag;
-      			imu = &lsm9ds1_imu; 
 			stepper-motor1 = &stepper_motor_1; 
 			stepper-motor2 = &stepper_motor_2; 
 			stepper-motor3 = &stepper_motor_3;
 			stepper-motor4 = &stepper_motor_4; 
 			stepper-motor5 = &stepper_motor_5;
-			limit-switch = &switch1;
 	};
 
 	chosen {
@@ -211,64 +176,4 @@
 		pinctrl-0 = <&tim15_ch1_pc12 &tim15_ch2_pe6>;
 		pinctrl-names = "default"; 
 	};
-};
-
-&i2c1 {
-	status = "okay"; 
-	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb9>;
-	pinctrl-names = "default"; 
-	clock-frequency = <I2C_BITRATE_STANDARD>; 
-
-	lsm9ds1_imu: lsm9ds1@6b {
-        compatible = "st,lsm9ds1";
-        reg = <0x6b>;
-        status = "okay";
-    	}; 
-  	lsm9ds1_mag: lsm9ds1@1e {
-        compatible = "st,lsm9ds1_mag";
-        reg = <0x1e>;
-        status = "okay";
-    	}; 
-	lj_imu: mpu6050@68 { 
-		compatible = "invensense,mpu6050";
-		reg = <0x68>;
-		status = "okay"; 
-	}; 
-	uj_imu: mpu6050@69 { 
-		compatible = "invensense,mpu6050";
-		reg = <0x69>;
-		status = "okay"; 
-	};
-	tt_mm: bmm150@13 { 
-		compatible = "bosch,bmm150";
-		reg = <0x13>;
-		status = "okay";
-	};
-};
-
-&i2c4 {
-	status = "okay"; 
-	pinctrl-0 = <&i2c4_scl_pf14 &i2c4_sda_pf15>;
-	pinctrl-names = "default"; 
-	clock-frequency = <I2C_BITRATE_STANDARD>; 
-
-	tt_imu: mpu6050@68 { 
-		compatible = "invensense,mpu6050";
-		reg = <0x68>;
-		status = "okay"; 
-	};
-	pr_imu: mpu6050@69 { 
-		compatible = "invensense,mpu6050";
-		reg = <0x69>;
-		status = "okay"; 
-	};
-	rover_mm: bmm150@13 {
-		compatible = "bosch,bmm150";
-		reg = <0x13>;
-		status = "okay";
-	};
- 	i2c-dump-allowlist {
- 	       compatible = "zephyr,i2c-dump-allowlist";
- 	       devices = <&rover_mm>;       
- 	};
 };
