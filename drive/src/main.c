@@ -24,9 +24,7 @@ LOG_MODULE_REGISTER(Tarzan, CONFIG_TARZAN_LOG_LEVEL);
 #define STACK_SIZE 4096   // work_q thread stack size
 #define PRIORITY 2        // work_q thread priority
 #define STEPPER_TIMER 100 // stepper pulse width in microseconds
-#define DRIVE_UPDATE_HZ 50
-#define DRIVE_UPDATE_MS (1000 / DRIVE_UPDATE_HZ) // 20ms period
-#define DT_SEC (1.0f / DRIVE_UPDATE_HZ)          // const dt = 0.02f
+#define JERK_LIMITER true
 
 /* sbus uart */
 static const struct device *const sbus_uart =
@@ -44,8 +42,9 @@ static const struct device *const gps_uart = DEVICE_DT_GET(DT_ALIAS(gps_uart));
 #define PWM_MOTOR_SETUP(pwm_dev_id)                                            \
   {.dev_spec = PWM_DT_SPEC_GET(pwm_dev_id),                                    \
    .min_pulse = DT_PROP(pwm_dev_id, min_pulse),                                \
-   .max_pulse = DT_PROP(pwm_dev_id, max_pulse)},
-struct pwm_motor motor[12] = {
+   .max_pulse = DT_PROP(pwm_dev_id, max_pulse),                                \
+   .channel = DT_PROP_OR(pwm_dev_id, channel, -1)},
+struct pwm_motor motor[6] = {
     DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
 
 /* DT spec for stepper */
@@ -60,10 +59,6 @@ const struct stepper stepper[5] = {
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor4), step_gpios)},
     {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), dir_gpios),
      .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), step_gpios)}};
-
-/*DT spec for I2C devices */
-const struct device *lsm_imu = DEVICE_DT_GET(DT_ALIAS(imu));
-const struct device *lsm_mag = DEVICE_DT_GET(DT_ALIAS(mag));
 
 /* DT spec for leds */
 static const struct gpio_dt_spec init_led =
@@ -113,8 +108,6 @@ struct drive_arg {
   struct DiffDriveTwist cmd;
   struct DiffDriveCtx *drive_init;
   uint8_t drive_raw_buffer[sizeof(struct drive_msg) + 2];
-  uint64_t time_last_drive_update;
-  struct joint *lsm;
 } drive;
 
 /* struct for arm variables */
@@ -156,8 +149,6 @@ uint8_t bs_tx_buf[sizeof(struct base_station_msg) + 2] = {0};
 float linear_velocity_range[] = {-1.5, 1.5};
 float angular_velocity_range[] = {-5.5, 5.5};
 float wheel_velocity_range[] = {-10.0, 10.0};
-uint32_t pwm_range[] = {1100000, 1900000};
-uint32_t servo_pwm_range[] = {500000, 2500000};
 uint16_t channel_range[] = {172, 1811};
 
 /* check if received cobs message is valid,
@@ -316,15 +307,19 @@ int velocity_callback(const float *velocity_buffer, int buffer_len,
   if (buffer_len < wheels_per_side * 2) {
     return 1;
   }
-  if (pwm_motor_write(&(motor[0]), velocity_pwm_interpolation(
-                                       *(velocity_buffer), wheel_velocity_range,
-                                       pwm_range))) {
+  if (pwm_motor_write(&(motor[0]), LINEAR_INTERPOLATION(*velocity_buffer,
+                                                        wheel_velocity_range[0],
+                                                        wheel_velocity_range[1],
+                                                        motor[0].min_pulse,
+                                                        motor[0].max_pulse))) {
     LOG_ERR("Drive: Unable to write pwm pulse to Left");
     return 1;
   }
-  if (pwm_motor_write(&(motor[1]), velocity_pwm_interpolation(
-                                       *(velocity_buffer + wheels_per_side + 1),
-                                       wheel_velocity_range, pwm_range))) {
+  if (pwm_motor_write(&(motor[1]), LINEAR_INTERPOLATION(*velocity_buffer,
+                                                        wheel_velocity_range[0],
+                                                        wheel_velocity_range[1],
+                                                        motor[1].min_pulse,
+                                                        motor[1].max_pulse))) {
     LOG_ERR("Drive: Unable to write pwm pulse to Right");
     return 1;
   }
@@ -347,81 +342,22 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   ch_reader_cnt++;
   k_mutex_unlock(&ch_reader_cnt_mutex);
 
-  /* drive motor write */
-  uint64_t drive_timestamp = k_uptime_get();
+  // drive update
+  drive_info->cmd.linear_x =
+      LINEAR_INTERPOLATION(channel[0], channel_range[0], channel_range[1],
+                           linear_velocity_range[0], linear_velocity_range[1]);
+  drive_info->cmd.angular_z = LINEAR_INTERPOLATION(
+      channel[1], channel_range[0], channel_range[1], angular_velocity_range[0],
+      angular_velocity_range[1]);
+  diffdrive_update(drive_info->drive_init, drive_info->cmd);
 
-  drive_info->drive_init->drive_control.autonomous = false;
+  for (size_t i = 2U; i < ARRAY_SIZE(motor); i++) {
+    if (pwm_motor_write(&(motor[i]), LINEAR_INTERPOLATION(
+                                         channel[motor->channel],
+                                         motor->min_pulse, motor->max_pulse,
+                                         channel_range[0], channel_range[1])))
 
-  if (drive_info->time_last_drive_update >= DRIVE_UPDATE_MS) {
-
-    drive_info->cmd.angular_z = sbus_velocity_interpolation(
-        channel[0], angular_velocity_range, channel_range);
-    drive_info->cmd.linear_x = sbus_velocity_interpolation(
-        channel[1], linear_velocity_range, channel_range);
-
-    if (madgwick_filter(lsm_mag, lsm_imu, drive_info->lsm)) {
-      drive_info->drive_init->drive_control.yaw_error.yaw_correction = true;
-      float yaw = drive_info->lsm->yaw;
-      float yaw_rate = drive_info->lsm->gyro[2];
-
-      diffdrive_update(drive_info->drive_init, drive_info->cmd, DT_SEC, yaw,
-                       yaw_rate);
-
-      drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
-
-    } else {
-      // drive without yaw correction
-      drive_info->drive_init->drive_control.yaw_error.yaw_correction = false;
-      diffdrive_update(drive_info->drive_init, drive_info->cmd, DT_SEC, NAN,
-                       NAN);
-      drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
-      LOG_ERR("Rover lsm9ds1: Madgwick filter update failed");
-    }
-  }
-
-  // tilt servo write
-  if (pwm_motor_write(
-          &(motor[6]),
-          sbus_pwm_interpolation(channel[10], servo_pwm_range, channel_range)))
-    LOG_ERR("Tilt Servo: Unable to write");
-
-  // pan servo write
-  if (pwm_motor_write(
-          &(motor[7]),
-          sbus_pwm_interpolation(channel[9], servo_pwm_range, channel_range)))
-    LOG_ERR("Pan Servo: Unable to write");
-
-  /* mode 1 */
-  if (channel[8] < 992) {
-
-    // writing neutral to gripper
-    if (pwm_motor_write(&(motor[4]), 1500000))
-      LOG_ERR("Gripper: Unable to write");
-
-    // linear actuator write
-    if (pwm_motor_write(&(motor[2]), sbus_pwm_interpolation(
-                                         channel[2], pwm_range, channel_range)))
-      LOG_ERR("Linear Actuator 1: Unable to write");
-
-    if (pwm_motor_write(&(motor[3]), sbus_pwm_interpolation(
-                                         channel[7], pwm_range, channel_range)))
-      LOG_ERR("Linear Actuator 2: Unable to write");
-
-    // abox/mini-acctuator/ogger write
-    if (pwm_motor_write(&(motor[5]), sbus_pwm_interpolation(
-                                         channel[3], pwm_range, channel_range)))
-      LOG_ERR("Mini-Acc/Ogger: Unable to write");
-  }
-
-  /* mode 0 (gripper/bio-arm written) */
-  if (channel[8] >= 992) {
-    // writing neutral to abox/mini acc
-    if (pwm_motor_write(&(motor[5]), 1500000))
-      LOG_ERR("Abox/Mini-Acc: Unable to write");
-
-    if (pwm_motor_write(&(motor[4]), sbus_pwm_interpolation(
-                                         channel[3], pwm_range, channel_range)))
-      LOG_ERR("Gripper/Bio-Arm: Unable to write");
+      LOG_ERR("PWM: Motor %s unable to write", motor[i].dev_spec.dev->name);
   }
 
   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
@@ -430,6 +366,7 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
     k_sem_give(&ch_sem);
   }
   k_mutex_unlock(&ch_reader_cnt_mutex);
+  ;
 }
 
 /* autonomous drive work handler */
@@ -444,33 +381,10 @@ void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
       msg->crc)
     return;
 
-  uint64_t drive_timestamp = k_uptime_get();
-
-  drive_info->drive_init->drive_control.autonomous = true;
-
-  if (drive_info->time_last_drive_update >= DRIVE_UPDATE_MS) {
-
-    drive_info->cmd.linear_x = msg->auto_cmd.linear_x;
-    drive_info->cmd.angular_z = msg->auto_cmd.angular_z;
-
-    if (madgwick_filter(lsm_mag, lsm_imu, drive_info->lsm)) {
-
-      drive_info->drive_init->drive_control.yaw_error.yaw_correction = true;
-      float yaw = drive_info->lsm->yaw;
-      float yaw_rate = drive_info->lsm->gyro[2];
-
-      diffdrive_update(drive_info->drive_init, drive_info->cmd, DT_SEC, yaw,
-                       yaw_rate);
-
-      drive_info->time_last_drive_update = k_uptime_get() - drive_timestamp;
-
-    } else {
-      drive_info->drive_init->drive_control.yaw_error.yaw_correction = false;
-      diffdrive_update(drive_info->drive_init, drive_info->cmd, DT_SEC, NAN,
-                       NAN);
-      LOG_ERR("Rover lsm9ds1: Madgwick filter update failed");
-    }
-  }
+  // update drive
+  drive_info->cmd.linear_x = msg->auto_cmd.linear_x;
+  drive_info->cmd.angular_z = msg->auto_cmd.angular_z;
+  diffdrive_update(drive_info->drive_init, drive_info->cmd);
 }
 
 /* arm channel work handler */
@@ -580,7 +494,8 @@ int main() {
       .right_wheel_radius_multiplier = 1,
   };
   drive.drive_config = tmp_drive_config;
-  drive.drive_init = drive_init(&(drive.drive_config), velocity_callback);
+  drive.drive_init =
+      drive_init(&(drive.drive_config), JERK_LIMITER, velocity_callback);
 
   /* sbus uart ready check */
   if (!device_is_ready(sbus_uart))
@@ -633,46 +548,22 @@ int main() {
 
   /* pwm ready check */
   for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) {
-    if (!pwm_is_ready_dt(&(motor[i].dev_spec))) {
+    if (!pwm_is_ready_dt(&(motor[i].dev_spec)))
       LOG_ERR("PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
-    }
-  }
-  for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) {
-    if (pwm_motor_write(&(motor[i]), 1500000)) {
+    if (pwm_motor_write(&(motor[i]), 1500000))
       LOG_ERR("Unable to write pwm pulse to PWM Motor : %d\n", i);
-    }
   }
 
   /* stepper motor ready check */
-  for (size_t i = 0U; i < 5; i++) {
-    if (!gpio_is_ready_dt(&stepper[i].dir)) {
-      LOG_ERR("Stepper Motor %d: Dir %d is not ready", i, stepper[i].dir.pin);
-    }
-    if (!gpio_is_ready_dt(&stepper[i].step)) {
-      LOG_ERR("Stepper Motor %d: Dir %d is not ready", i, stepper[i].step.pin);
-    }
+  for (size_t i = 0U; i < ARRAY_SIZE(stepper); i++) {
+    if (!gpio_is_ready_dt(&stepper[i].dir) ||
+        !gpio_is_ready_dt(&stepper[i].step))
+      LOG_ERR("Stepper Motor %d: Pin %d is not ready", i, stepper[i].dir.pin);
+
+    if (gpio_pin_configure_dt(&(stepper[i].dir), GPIO_OUTPUT_INACTIVE) ||
+        gpio_pin_configure_dt(&(stepper[i].step), GPIO_OUTPUT_INACTIVE))
+      LOG_ERR("Stepper motor %d: Pin %d not configured", i, stepper[i].dir.pin);
   }
-
-  /* configure stepper gpio for output */
-  for (size_t i = 0U; i < 5; i++) {
-    if (gpio_pin_configure_dt(&(stepper[i].dir), GPIO_OUTPUT_INACTIVE)) {
-      LOG_ERR("Stepper motor %d: Dir %d not configured", i, stepper[i].dir.pin);
-    }
-    if (gpio_pin_configure_dt(&(stepper[i].step), GPIO_OUTPUT_INACTIVE)) {
-      LOG_ERR("Stepper motor %d: Dir %d not configured", i,
-              stepper[i].step.pin);
-    }
-  }
-
-  /* imu ready check */
-  if (!device_is_ready(lsm_imu) || !device_is_ready(lsm_mag))
-    LOG_ERR("Rover lsm9ds1 not ready");
-
-  /* calibrate imu & mag */
-  if (calibrate_gyro(lsm_imu, drive.lsm))
-    LOG_ERR("Rover lsm9ds1 gyro calibration failed");
-  if (calibrate_magnetometer(lsm_mag, drive.lsm))
-    LOG_ERR("Rover lsm9ds1 gyro calibration failed");
 
   /* led ready checks */
   if (!gpio_is_ready_dt(&init_led)) {

@@ -21,3 +21,9 @@ child-binding:
       required: true
       type: int 
       description: Maximum pulse width (nanoseconds)
+
+    channel:
+      required: false
+      type: int 
+      description: RC channel controlling the motor
+
