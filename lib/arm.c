@@ -1,5 +1,4 @@
 #include <Tarzan/lib/arm.h>
-#include <Tarzan/lib/lsm9ds1.h>
 #include <Tarzan/lib/madgwick.h>
 #include <float.h>
 #include <math.h>
