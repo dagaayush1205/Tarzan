@@ -1,3 +1,4 @@
+#include "zephyr/kernel.h"
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -27,93 +28,13 @@ int pwm_motor_write(const struct pwm_motor *motor, uint32_t pulse_width) {
   return ret;
 }
 
-/* Velocity to PWM interpolation
- * params:
- * velocity-> input velocity
- * vel_range-> input velocity range
- * pwm_range-> output pwm range*/
-uint32_t velocity_pwm_interpolation(float velocity, float *vel_range,
-                                    uint32_t *pwm_range) {
-  if (velocity > vel_range[1]) {
-    return pwm_range[1];
-  }
-
-  if (velocity < vel_range[0]) {
-    return pwm_range[0];
-  }
-
-  if (abs((int)velocity * 100) == 0) {
-    return (uint32_t)((pwm_range[0] + pwm_range[1]) / 2);
-  }
-
-  float dvel = vel_range[1] - vel_range[0];
-  float dpwm = pwm_range[1] - pwm_range[0];
-
-  uint32_t pwm_interp =
-      pwm_range[0] + (dpwm / dvel) * (velocity - vel_range[0]);
-
-  return pwm_interp;
-}
-
-/* interpolates sbus channel value to velocity
- *param :
- *channel - sbus channel
- *velocity_range - velocity range for interpolation
- *channel_range - sbus channel range */
-float sbus_velocity_interpolation(uint16_t channel, float *velocity_range,
-                                  uint16_t *channel_range) {
-
-  if (channel > channel_range[1])
-    return velocity_range[1];
-
-  if (channel < channel_range[0])
-    return velocity_range[0];
-
-  if (channel < 1050 && channel > 950)                  // deadzone
-    return (velocity_range[0] + velocity_range[1]) / 2; // neutral
-
-  float dchannel = channel_range[1] - channel_range[0];
-  float dvel = velocity_range[1] - velocity_range[0];
-
-  float vel_interp =
-      velocity_range[0] + (dvel / dchannel) * (channel - channel_range[0]);
-
-  return vel_interp;
-}
-
-/* interpolates sbus channel value to pwm
- * param :
- * channel - sbus channel value
- * pwm_range - pwm range for interpolation
- * channel_range - sbus channel range */
-uint32_t sbus_pwm_interpolation(uint16_t channel, uint32_t *pwm_range,
-                                uint16_t *channel_range) {
-
-  if (channel > channel_range[1])
-    return pwm_range[2];
-
-  if (channel < channel_range[0])
-    return pwm_range[0];
-
-  if (channel < 1050 && channel > 950) // deadzone
-    return 1500000;                    // neutral
-
-  float dchannel = channel_range[1] - channel_range[0];
-  float dpwm = pwm_range[1] - pwm_range[0];
-
-  uint32_t pwm_interp =
-      pwm_range[0] + (dpwm / dchannel) * (channel - channel_range[0]);
-
-  return pwm_interp;
-}
-
 /*initialize the diffdirve context variable
  * param:
  * config-> ptr to the config to init
  * velocity_callback-> func to write the pwm val to motors
  **/
 struct DiffDriveCtx *
-drive_init(struct DiffDriveConfig *config,
+drive_init(struct DiffDriveConfig *config, bool jerk_limiter_switch,
            int (*velocity_callback)(const float *velocity_buffer,
                                     int buffer_len, int wheels_per_side)) {
   struct DiffDriveCtx *ctx =
@@ -129,17 +50,15 @@ drive_init(struct DiffDriveConfig *config,
 
   ctx->previous_update_timestamp = k_uptime_get();
 
+  ctx->limiter_switch = jerk_limiter_switch;
+
   // Initialize the jerk limiter
-  jerk_limiter_init(&ctx->drive_control.linear_limiter, 0.0f, 0.0f,
-                    LINEAR_V_MAX, LINEAR_A_MAX, LINEAR_J_MAX);
-  jerk_limiter_init(&ctx->drive_control.angular_limiter, 0.0f, 0.0f,
-                    ANGULAR_V_MAX, ANGULAR_A_MAX, ANGULAR_J_MAX);
-
-  // Initialize lqr gains
-  init_lqr_gains(&ctx->drive_control.yaw_error);
-
-  // set autonomous flag
-  ctx->drive_control.autonomous = false;
+  if (jerk_limiter_switch) {
+    jerk_limiter_init(&ctx->drive_control.linear_limiter, 0.0f, 0.0f,
+                      LINEAR_V_MAX, LINEAR_A_MAX, LINEAR_J_MAX);
+    jerk_limiter_init(&ctx->drive_control.angular_limiter, 0.0f, 0.0f,
+                      ANGULAR_V_MAX, ANGULAR_A_MAX, ANGULAR_J_MAX);
+  }
 
   return ctx;
 }
@@ -149,47 +68,28 @@ drive_init(struct DiffDriveConfig *config,
  * ctx-> differential drive context var
  * command-> linear and angular command
  * dt_sec-> time since last update*/
-int diffdrive_update(struct DiffDriveCtx *ctx, struct DiffDriveTwist command,
-                     float dt_sec, float yaw, float yaw_rate) {
+int diffdrive_update(struct DiffDriveCtx *ctx, struct DiffDriveTwist command) {
+
   int ret = 0;
   float linear_command;
   float angular_command;
 
+  int64_t dt = k_uptime_delta(&ctx->previous_update_timestamp);
+
   // Get time since last update
-  if (k_uptime_delta(&ctx->previous_update_timestamp) / 1000 >
-      ctx->drive_config.command_timeout_seconds) {
+  if (dt / 1000 > ctx->drive_config.command_timeout_seconds) {
     command.linear_x = 0.0;
     command.angular_z = 0.0;
   }
 
-  // MANUAL MODE
-  if (ctx->drive_control.autonomous) {
+  if (ctx->limiter_switch) {
+    linear_command = jerk_limiter_step(&ctx->drive_control.linear_limiter,
+                                       command.linear_x, dt);
+    angular_command = jerk_limiter_step(&ctx->drive_control.angular_limiter,
+                                        command.angular_z, dt);
+  } else {
     linear_command = command.linear_x;
     angular_command = command.angular_z;
-  } else {
-    linear_command = jerk_limiter_step(&ctx->drive_control.linear_limiter,
-                                       command.linear_x, dt_sec);
-    angular_command = jerk_limiter_step(&ctx->drive_control.angular_limiter,
-                                        command.angular_z, dt_sec);
-  }
-
-  if (ctx->drive_control.yaw_error.yaw_correction) {
-    if (angular_command != 0.0f) {
-      ctx->drive_control.yaw_error.desired_yaw = yaw;
-    } else if (linear_command != 0.0f) {
-      ctx->drive_control.yaw_error.yaw = yaw;
-      ctx->drive_control.yaw_error.yaw_rate = yaw_rate;
-      angular_command = lqr_yaw_correction(&ctx->drive_control.yaw_error);
-    }
-  }
-
-  if(angular_command!=0.0f){
-	  ctx->drive_control.yaw_error.desired_yaw = yaw;
-  }
-  else if(linear_command!=0.0f){
-	  ctx->drive_control.yaw_error.yaw = yaw;
-	  ctx->drive_control.yaw_error.yaw_rate = yaw_rate;
-	  angular_command = lqr_yaw_correction(&ctx->drive_control.yaw_error);
   }
 
   const float wheel_separation = ctx->drive_config.wheel_separation_multiplier *
