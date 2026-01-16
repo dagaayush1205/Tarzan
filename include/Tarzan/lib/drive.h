@@ -17,7 +17,7 @@ struct pwm_motor {
   const struct pwm_dt_spec dev_spec;
   const uint32_t min_pulse;
   const uint32_t max_pulse;
-  int channel;
+  const int channel;
 };
 
 struct DiffDriveTwist {

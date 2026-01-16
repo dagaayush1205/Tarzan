@@ -11,7 +11,7 @@
  * motor - dt spec for stepper motor
  * dir - clockwise or anti-clockwise
  * pos - stepper position*/
-int Stepper_motor_write(const struct stepper *motor, int dir, int pos) {
+int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos) {
   if (dir == HIGH_PULSE) {
     gpio_pin_set_dt(&(motor->dir), 1);
     pos += 1; // clockwise

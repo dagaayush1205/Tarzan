@@ -8,9 +8,10 @@
 #define M_PI 3.14159265358979323846f
 #define TAU 0.90f
 
-struct stepper {
+struct stepper_motor {
   const struct gpio_dt_spec dir;
   const struct gpio_dt_spec step;
+  const int channel; 
 };
 
 enum StepperDirection {
@@ -33,44 +34,8 @@ struct joint {
   float mag_offset[3];
   uint64_t prev_time;
 };
-/* inverse message */
-struct inverse_msg {
-  float turn_table;
-  float first_link;
-  float second_link;
-  float pitch;
-  float roll;
-  float x;
-  float y;
-  float z;
-};
-/* imu data */ 
-struct imu_data { 
-  enum {
-        IMU_OK = 0,
-        IMU_NOT_READY,
-        IMU_CALIBRATION_FAILED,
-        IMU_FETCH_FAILED
-  } error_code;
-  double accel[3]; 
-  double gyro[3];
-  double mag[3];
-  double gyro_offset[3];
-  double accel_offset[3];
-  uint64_t prev_time;
-  double pitch;
-  double roll;
-};
 
-/* imu data msg */
-struct imu_msg {
-  struct imu_data baseLink;
-  struct imu_data firstLink;
-  struct imu_data secondLink;
-  struct imu_data differential;
-};
-
-int Stepper_motor_write(const struct stepper *motor, int dir, int pos);
+int Stepper_motor_write(const struct stepper_motor *motor, int dir, int pos);
 
 int complementary_filter(const struct device *dev, struct joint *data);
 

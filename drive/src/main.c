@@ -3,8 +3,10 @@
 #include <string.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/drivers/gnss.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/stepper.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/kernel/thread_stack.h>
@@ -29,12 +31,8 @@ LOG_MODULE_REGISTER(Tarzan, CONFIG_TARZAN_LOG_LEVEL);
 /* sbus uart */
 static const struct device *const sbus_uart =
     DEVICE_DT_GET(DT_ALIAS(sbus_uart));
-/* telemetry uart */
-static const struct device *const telemetry_uart =
-    DEVICE_DT_GET(DT_ALIAS(telemetry_uart));
-/* latte panda uart */
-static const struct device *const latte_panda_uart =
-    DEVICE_DT_GET(DT_ALIAS(latte_panda_uart));
+/* sbc uart */
+static const struct device *const sbc_uart = DEVICE_DT_GET(DT_ALIAS(sbc_uart));
 /* gps uart */
 static const struct device *const gps_uart = DEVICE_DT_GET(DT_ALIAS(gps_uart));
 
@@ -44,21 +42,17 @@ static const struct device *const gps_uart = DEVICE_DT_GET(DT_ALIAS(gps_uart));
    .min_pulse = DT_PROP(pwm_dev_id, min_pulse),                                \
    .max_pulse = DT_PROP(pwm_dev_id, max_pulse),                                \
    .channel = DT_PROP_OR(pwm_dev_id, channel, -1)},
-struct pwm_motor motor[6] = {
-    DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
+const struct pwm_motor pwm_motor[DT_CHILD_NUM_STATUS_OKAY(DT_PATH(pwmmotors))] =
+    {DT_FOREACH_CHILD(DT_PATH(pwmmotors), PWM_MOTOR_SETUP)};
 
-/* DT spec for stepper */
-const struct stepper stepper[5] = {
-    {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), dir_gpios),
-     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor1), step_gpios)},
-    {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), dir_gpios),
-     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor2), step_gpios)},
-    {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), dir_gpios),
-     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor3), step_gpios)},
-    {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor4), dir_gpios),
-     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor4), step_gpios)},
-    {.dir = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), dir_gpios),
-     .step = GPIO_DT_SPEC_GET(DT_ALIAS(stepper_motor5), step_gpios)}};
+/* DT spec for stepper motors */
+#define STEPPER_MOTOR_SETUP(stepper_dev_id)                                    \
+  {.dir = GPIO_DT_SPEC_GET(stepper_dev_id, dir_gpios),                         \
+   .step = GPIO_DT_SPEC_GET(stepper_dev_id, step_gpios),                       \
+   .channel = DT_PROP_OR(stepper_dev_id, channel, -1)},
+const struct stepper_motor
+    stepper[DT_CHILD_NUM_STATUS_OKAY(DT_PATH(steppermotors))] = {
+        DT_FOREACH_CHILD(DT_PATH(steppermotors), STEPPER_MOTOR_SETUP)};
 
 /* DT spec for leds */
 static const struct gpio_dt_spec init_led =
@@ -73,16 +67,20 @@ struct drive_msg {
   uint32_t crc;
 };
 
-/* msg struct for com with base station */
+/* msg struct for tx coms */
+struct gps_data {
+  int64_t latitude;
+  int64_t longitude;
+  int32_t altitude;
+  int32_t bearing;
+};
 struct base_station_msg {
-  char gps_msg[100];
+  struct gps_data data;
   uint32_t crc;
 };
 
 /* defining sbus message queue*/
 K_MSGQ_DEFINE(sbus_msgq, 25 * sizeof(uint8_t), 10, 1);
-/* defining gps message queue */
-K_MSGQ_DEFINE(gps_msgq, sizeof(uint8_t) * 100, 10, 1);
 /* defining cobs message queue */
 K_MSGQ_DEFINE(drive_msgq, sizeof(struct drive_msg) + 2, 50, 1);
 
@@ -132,7 +130,7 @@ struct com_rx_arg {
                .rx_buf = drive.drive_raw_buffer};
 
 struct com_tx_arg {
-  struct k_work latte_panda_tx_work_item;
+  struct k_work sbc_tx_work_item;
   struct base_station_msg bs_msg_tx; // to store encoded base station mssg
 } com_tx;
 
@@ -180,31 +178,15 @@ void sbus_cb(const struct device *dev, void *user_data) {
 }
 
 /* interrupt to store gps data */
-void gps_cb(const struct device *dev, void *user_data) {
-  ARG_UNUSED(user_data);
-  char c;
-  if (!uart_irq_update(gps_uart)) {
-    return;
-  }
-
-  if (!uart_irq_rx_ready(gps_uart)) {
-    return;
-  }
-  while (gps_bytes_read < 100 && uart_fifo_read(gps_uart, &c, 1)) {
-    if (gps_bytes_read == 0 && c != 0xb5)
-      continue;
-    if (gps_bytes_read == 1 && c != 0x62)
-      continue;
-    if (gps_bytes_read == 2 && c != 0x01)
-      continue;
-    if (gps_bytes_read == 3 && c != 0x07)
-      continue;
-    gps_mssg[gps_bytes_read++] = c;
-  }
-  if (gps_bytes_read == 100) {
-    k_msgq_put(&gps_msgq, gps_mssg, K_NO_WAIT);
-    gps_bytes_read = 0;
-  }
+void gps_cb(const struct device *dev, const struct gnss_data *data) {
+  if (data->info.fix_status != GNSS_FIX_STATUS_NO_FIX) {
+    com_tx.bs_msg_tx.data.latitude = data->nav_data.latitude;
+    com_tx.bs_msg_tx.data.longitude = data->nav_data.longitude;
+    com_tx.bs_msg_tx.data.altitude = data->nav_data.altitude;
+    com_tx.bs_msg_tx.data.bearing = data->nav_data.bearing;
+    // k_work_submit_to_queue(&work_q, &(com_tx.sbc_tx_work_item));
+  } else
+    LOG_ERR("GPS: Unable to fix satellite");
 }
 
 /* interrup to read cobs messages */
@@ -279,12 +261,11 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
   k_work_submit_to_queue(&work_q, com_info->work_item);
 }
 
-void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
+void sbc_tx_work_handler(struct k_work *sbc_tx_work_ptr) {
   struct com_tx_arg *com_info =
-      CONTAINER_OF(latte_panda_tx_work_ptr, struct com_tx_arg,
-                   latte_panda_tx_work_item); // changed type from som_arg to
-                                              // com_tx_arg to match type
-  k_msgq_get(&gps_msgq, com_info->bs_msg_tx.gps_msg, K_MSEC(4));
+      CONTAINER_OF(sbc_tx_work_ptr, struct com_tx_arg,
+                   sbc_tx_work_item); // changed type from som_arg to
+                                      // com_tx_arg to match type
   com_info->bs_msg_tx.crc =
       crc32_ieee((uint8_t *)(&com_info->bs_msg_tx),
                  sizeof(struct base_station_msg) - sizeof(uint32_t));
@@ -298,7 +279,7 @@ void latte_panda_tx_work_handler(struct k_work *latte_panda_tx_work_ptr) {
   }
   bs_tx_buf[BS_MSG_LEN - 1] = 0x00;
   for (int i = 0; i < BS_MSG_LEN; i++) {
-    uart_poll_out(latte_panda_uart, bs_tx_buf[i]);
+    uart_poll_out(sbc_uart, bs_tx_buf[i]);
   }
 }
 
@@ -307,19 +288,19 @@ int velocity_callback(const float *velocity_buffer, int buffer_len,
   if (buffer_len < wheels_per_side * 2) {
     return 1;
   }
-  if (pwm_motor_write(&(motor[0]), LINEAR_INTERPOLATION(*velocity_buffer,
-                                                        wheel_velocity_range[0],
-                                                        wheel_velocity_range[1],
-                                                        motor[0].min_pulse,
-                                                        motor[0].max_pulse))) {
+  if (pwm_motor_write(
+          &(pwm_motor[0]),
+          LINEAR_INTERPOLATION(*velocity_buffer, wheel_velocity_range[0],
+                               wheel_velocity_range[1], pwm_motor[0].min_pulse,
+                               pwm_motor[0].max_pulse))) {
     LOG_ERR("Drive: Unable to write pwm pulse to Left");
     return 1;
   }
-  if (pwm_motor_write(&(motor[1]), LINEAR_INTERPOLATION(*velocity_buffer,
-                                                        wheel_velocity_range[0],
-                                                        wheel_velocity_range[1],
-                                                        motor[1].min_pulse,
-                                                        motor[1].max_pulse))) {
+  if (pwm_motor_write(&(pwm_motor[1]),
+                      LINEAR_INTERPOLATION(
+                          *(velocity_buffer + wheels_per_side + 1),
+                          wheel_velocity_range[0], wheel_velocity_range[1],
+                          pwm_motor[1].min_pulse, pwm_motor[1].max_pulse))) {
     LOG_ERR("Drive: Unable to write pwm pulse to Right");
     return 1;
   }
@@ -343,23 +324,22 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   k_mutex_unlock(&ch_reader_cnt_mutex);
 
   // drive update
-  drive_info->cmd.linear_x =
-      LINEAR_INTERPOLATION(channel[0], channel_range[0], channel_range[1],
-                           linear_velocity_range[0], linear_velocity_range[1]);
+  drive_info->cmd.linear_x = LINEAR_INTERPOLATION(
+      channel[pwm_motor[0].channel], channel_range[0], channel_range[1],
+      linear_velocity_range[0], linear_velocity_range[1]);
   drive_info->cmd.angular_z = LINEAR_INTERPOLATION(
-      channel[1], channel_range[0], channel_range[1], angular_velocity_range[0],
-      angular_velocity_range[1]);
+      channel[pwm_motor[1].channel], channel_range[0], channel_range[1],
+      angular_velocity_range[0], angular_velocity_range[1]);
   diffdrive_update(drive_info->drive_init, drive_info->cmd);
 
-  for (size_t i = 2U; i < ARRAY_SIZE(motor); i++) {
-    if (pwm_motor_write(&(motor[i]), LINEAR_INTERPOLATION(
-                                         channel[motor->channel],
-                                         motor->min_pulse, motor->max_pulse,
-                                         channel_range[0], channel_range[1])))
-
-      LOG_ERR("PWM: Motor %s unable to write", motor[i].dev_spec.dev->name);
+  for (size_t i = 2U; i < ARRAY_SIZE(pwm_motor); i++) {
+    if (pwm_motor_write(
+            &(pwm_motor[i]),
+            LINEAR_INTERPOLATION(channel[pwm_motor[i].channel],
+		    channel_range[0], channel_range[1],
+                                 pwm_motor->min_pulse, pwm_motor->max_pulse)))
+      LOG_ERR("PWM: Motor %s unable to write", pwm_motor[i].dev_spec.dev->name);
   }
-
   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
   ch_reader_cnt--;
   if (ch_reader_cnt == 0) {
@@ -402,28 +382,26 @@ void arm_channel_work_handler(struct k_work *work_ptr) {
   ch_reader_cnt++;
   k_mutex_unlock(&ch_reader_cnt_mutex);
 
-  uint16_t arm_channels[5] = {channel[6], channel[4], channel[5], 850, 850};
+  uint16_t arm_channels[5] = {channel[7], channel[3], channel[2], 850, 850};
 
   /* neutral */
-  if (channel[8] >= 992) {
-    // setting pitch (motors same direction)
-    if (channel[7] > 992 || channel[7] < 800) {
-      arm_channels[3] = channel[7];
-      arm_channels[4] = channel[7];
-    }
-    // setting roll (motors opposite direction)
-    if (channel[2] > 992 || channel[2] < 800) {
-      arm_channels[3] = channel[2];
-      arm_channels[4] =
-          abs(channel[2] -
-              1400); // subtracting arbitary value to set opposite direction
-    }
-    // do not move if cmd to both the channels
-    if ((channel[2] > 992 || channel[2] < 800) &&
-        (channel[7] > 992 || channel[7] < 800)) {
-      arm_channels[3] = 850; // neutral
-      arm_channels[4] = 850; // neutral
-    }
+  // setting pitch (motors same direction)
+  if (channel[5] > 992 || channel[5] < 800) {
+    arm_channels[3] = channel[5];
+    arm_channels[4] = channel[5];
+  }
+  // setting roll (motors opposite direction)
+  if (channel[4] > 992 || channel[4] < 800) {
+    arm_channels[3] = channel[4];
+    arm_channels[4] =
+        abs(channel[4] -
+            1400); // subtracting arbitary value to set opposite direction
+  }
+  // do not move if cmd to both the channels
+  if ((channel[2] > 992 || channel[2] < 800) &&
+      (channel[7] > 992 || channel[7] < 800)) {
+    arm_channels[3] = 850; // neutral
+    arm_channels[4] = 850; // neutral
   }
 
   for (int i = 0; i < 5; i++) {
@@ -453,12 +431,6 @@ void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
 
 K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
 
-/* timer to write mssg to latte panda */
-void mssg_timer_handler(struct k_timer *mssg_timer_ptr) {
-  k_work_submit_to_queue(&work_q, &(com_tx.latte_panda_tx_work_item));
-}
-K_TIMER_DEFINE(mssg_timer, mssg_timer_handler, NULL);
-
 int main() {
 
   LOG_INF("Tarzan version %s\nFile: %s\n", TARZAN_GIT_VERSION, __FILE__);
@@ -481,7 +453,7 @@ int main() {
   k_work_init(&(drive.auto_drive_work_item), auto_drive_work_handler);
   k_work_init(&(arm.channel_work_item), arm_channel_work_handler);
   k_work_init(&(drive_com.cobs_rx_work_item), cobs_rx_work_handler);
-  k_work_init(&(com_tx.latte_panda_tx_work_item), latte_panda_tx_work_handler);
+  k_work_init(&(com_tx.sbc_tx_work_item), sbc_tx_work_handler);
 
   /* initializing drive configs */
   const struct DiffDriveConfig tmp_drive_config = {
@@ -503,10 +475,10 @@ int main() {
   /* gps uart ready check */
   if (!device_is_ready(gps_uart))
     LOG_ERR("GPS UART device not ready");
-  /* latte panda uart ready check */
-  if (!device_is_ready(latte_panda_uart))
-    LOG_ERR("LATTE PANDA UART device not ready");
-  /* enable usb for latte panda com */
+  /* sbc uart ready check */
+  if (!device_is_ready(sbc_uart))
+    LOG_ERR("SBC UART device not ready");
+  /* enable usb for sbc com */
   if (usb_enable(NULL))
     LOG_ERR("CDC ACM UART failed");
 
@@ -522,20 +494,8 @@ int main() {
     }
   }
 
-  /* set gps uart for interrupt */
-  err = uart_irq_callback_user_data_set(gps_uart, gps_cb, NULL);
-  if (err < 0) {
-    if (err == -ENOTSUP) {
-      LOG_ERR("Interrupt-driven UART API support not enabled");
-    } else if (err == -ENOSYS) {
-      LOG_ERR("UART device does not support interrupt-driven API");
-    } else {
-      LOG_ERR("Error setting UART callback: %d", err);
-    }
-  }
-
-  /* set telemtry uart for interrupt */
-  err = uart_irq_callback_user_data_set(telemetry_uart, cobs_cb, &drive_com);
+  /* set sbc uart for interrupt */
+  err = uart_irq_callback_user_data_set(sbc_uart, cobs_cb, &drive_com);
   if (err < 0) {
     if (err == -ENOTSUP) {
       LOG_ERR("Interrupt-driven UART API support not enabled");
@@ -547,10 +507,10 @@ int main() {
   }
 
   /* pwm ready check */
-  for (size_t i = 0U; i < ARRAY_SIZE(motor); i++) {
-    if (!pwm_is_ready_dt(&(motor[i].dev_spec)))
-      LOG_ERR("PWM: Motor %s is not ready", motor[i].dev_spec.dev->name);
-    if (pwm_motor_write(&(motor[i]), 1500000))
+  for (size_t i = 0U; i < ARRAY_SIZE(pwm_motor); i++) {
+    if (!pwm_is_ready_dt(&(pwm_motor[i].dev_spec)))
+      LOG_ERR("PWM: Motor %s is not ready", pwm_motor[i].dev_spec.dev->name);
+    if (pwm_motor_write(&(pwm_motor[i]), 1500000))
       LOG_ERR("Unable to write pwm pulse to PWM Motor : %d\n", i);
   }
 
@@ -593,13 +553,12 @@ int main() {
   /* enable interrupt to receive sbus data */
   uart_irq_rx_enable(sbus_uart);
   /* enable interrupt to receive cobs data */
-  uart_irq_rx_enable(latte_panda_uart);
+  uart_irq_rx_enable(sbc_uart);
   /* enable interrupt to receive gps data */
-  uart_irq_rx_enable(gps_uart);
+  GNSS_DATA_CALLBACK_DEFINE(gps_uart, gps_cb);
 
   /* enabling stepper & mssg timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
-  k_timer_start(&mssg_timer, K_MSEC(10), K_SECONDS(1));
 
   return 0;
 }
