@@ -381,21 +381,20 @@ void arm_channel_work_handler(struct k_work *work_ptr) {
   k_mutex_unlock(&ch_reader_cnt_mutex);
 
   for (int i = 0U; i < ARRAY_SIZE(stepper_motor); i++) {
-    if (channel[stepper_motor[i].channel] > 1185) {
+    if (channel[stepper_motor[i].channel] > 1185)
       arm_info->dir[i] = HIGH_PULSE;
-    } else if (channel[stepper_motor[i].channel] < 800) {
+    else if (channel[stepper_motor[i].channel] < 800)
       arm_info->dir[i] = LOW_PULSE;
-    } else {
+    else
       arm_info->dir[i] = STOP_PULSE;
-
-      k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
-      ch_reader_cnt--;
-      if (ch_reader_cnt == 0) {
-        k_sem_give(&ch_sem);
-      }
-      k_mutex_unlock(&ch_reader_cnt_mutex);
-    }
   }
+
+  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
+  ch_reader_cnt--;
+  if (ch_reader_cnt == 0) {
+    k_sem_give(&ch_sem);
+  }
+  k_mutex_unlock(&ch_reader_cnt_mutex);
 }
 
 /* timer to write to stepper motors*/
@@ -540,4 +539,3 @@ int main() {
 
   return 0;
 }
-
