@@ -51,7 +51,7 @@ const struct pwm_motor pwm_motor[DT_CHILD_NUM_STATUS_OKAY(DT_PATH(pwmmotors))] =
    .step = GPIO_DT_SPEC_GET(stepper_dev_id, step_gpios),                       \
    .channel = DT_PROP_OR(stepper_dev_id, channel, -1)},
 const struct stepper_motor
-    stepper[DT_CHILD_NUM_STATUS_OKAY(DT_PATH(steppermotors))] = {
+    stepper_motor[DT_CHILD_NUM_STATUS_OKAY(DT_PATH(steppermotors))] = {
         DT_FOREACH_CHILD(DT_PATH(steppermotors), STEPPER_MOTOR_SETUP)};
 
 /* DT spec for leds */
@@ -137,17 +137,15 @@ struct com_tx_arg {
 int ch_reader_cnt;          // no. of readers accessing channels
 uint16_t channel[16] = {0}; // to store sbus channels
 uint8_t packet[25];         // to store sbus packets
-uint8_t gps_mssg[100];      // to store gps mssg
 int sbus_bytes_read;        // to store number of sbus bytes read
-int gps_bytes_read;         // to store number of gps bytes read
 const int BS_MSG_LEN =
     sizeof(struct base_station_msg) + 2; // len of base station mssg
 uint8_t bs_tx_buf[sizeof(struct base_station_msg) + 2] = {0};
 /* range variables */
-float linear_velocity_range[] = {-1.5, 1.5};
-float angular_velocity_range[] = {-5.5, 5.5};
-float wheel_velocity_range[] = {-10.0, 10.0};
-uint16_t channel_range[] = {172, 1811};
+const float linear_velocity_range[] = {-1.5, 1.5};
+const float angular_velocity_range[] = {-5.5, 5.5};
+const float wheel_velocity_range[] = {-10.0, 10.0};
+const uint16_t channel_range[] = {172, 1811};
 
 /* check if received cobs message is valid,
  * ret 0 if successfull */
@@ -184,7 +182,7 @@ void gps_cb(const struct device *dev, const struct gnss_data *data) {
     com_tx.bs_msg_tx.data.longitude = data->nav_data.longitude;
     com_tx.bs_msg_tx.data.altitude = data->nav_data.altitude;
     com_tx.bs_msg_tx.data.bearing = data->nav_data.bearing;
-    // k_work_submit_to_queue(&work_q, &(com_tx.sbc_tx_work_item));
+    k_work_submit_to_queue(&work_q, &(com_tx.sbc_tx_work_item));
   } else
     LOG_ERR("GPS: Unable to fix satellite");
 }
@@ -333,11 +331,11 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
   diffdrive_update(drive_info->drive_init, drive_info->cmd);
 
   for (size_t i = 2U; i < ARRAY_SIZE(pwm_motor); i++) {
-    if (pwm_motor_write(
-            &(pwm_motor[i]),
-            LINEAR_INTERPOLATION(channel[pwm_motor[i].channel],
-		    channel_range[0], channel_range[1],
-                                 pwm_motor->min_pulse, pwm_motor->max_pulse)))
+    if (pwm_motor_write(&(pwm_motor[i]),
+                        LINEAR_INTERPOLATION(channel[pwm_motor[i].channel],
+                                             channel_range[0], channel_range[1],
+                                             pwm_motor->min_pulse,
+                                             pwm_motor->max_pulse)))
       LOG_ERR("PWM: Motor %s unable to write", pwm_motor[i].dev_spec.dev->name);
   }
   k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
@@ -382,50 +380,28 @@ void arm_channel_work_handler(struct k_work *work_ptr) {
   ch_reader_cnt++;
   k_mutex_unlock(&ch_reader_cnt_mutex);
 
-  uint16_t arm_channels[5] = {channel[7], channel[3], channel[2], 850, 850};
-
-  /* neutral */
-  // setting pitch (motors same direction)
-  if (channel[5] > 992 || channel[5] < 800) {
-    arm_channels[3] = channel[5];
-    arm_channels[4] = channel[5];
-  }
-  // setting roll (motors opposite direction)
-  if (channel[4] > 992 || channel[4] < 800) {
-    arm_channels[3] = channel[4];
-    arm_channels[4] =
-        abs(channel[4] -
-            1400); // subtracting arbitary value to set opposite direction
-  }
-  // do not move if cmd to both the channels
-  if ((channel[2] > 992 || channel[2] < 800) &&
-      (channel[7] > 992 || channel[7] < 800)) {
-    arm_channels[3] = 850; // neutral
-    arm_channels[4] = 850; // neutral
-  }
-
-  for (int i = 0; i < 5; i++) {
-    if (arm_channels[i] > 1185) {
+  for (int i = 0U; i < ARRAY_SIZE(stepper_motor); i++) {
+    if (channel[stepper_motor[i].channel] > 1185) {
       arm_info->dir[i] = HIGH_PULSE;
-    } else if (arm_channels[i] < 800) {
+    } else if (channel[stepper_motor[i].channel] < 800) {
       arm_info->dir[i] = LOW_PULSE;
     } else {
       arm_info->dir[i] = STOP_PULSE;
+
+      k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
+      ch_reader_cnt--;
+      if (ch_reader_cnt == 0) {
+        k_sem_give(&ch_sem);
+      }
+      k_mutex_unlock(&ch_reader_cnt_mutex);
     }
   }
-
-  k_mutex_lock(&ch_reader_cnt_mutex, K_FOREVER);
-  ch_reader_cnt--;
-  if (ch_reader_cnt == 0) {
-    k_sem_give(&ch_sem);
-  }
-  k_mutex_unlock(&ch_reader_cnt_mutex);
 }
 
 /* timer to write to stepper motors*/
 void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
-  for (int i = 0; i < 5; i++) {
-    arm.pos[i] = Stepper_motor_write(&stepper[i], arm.dir[i], arm.pos[i]);
+  for (int i = 0U; i < ARRAY_SIZE(stepper_motor); i++) {
+    arm.pos[i] = Stepper_motor_write(&stepper_motor[i], arm.dir[i], arm.pos[i]);
   }
 }
 
@@ -515,14 +491,16 @@ int main() {
   }
 
   /* stepper motor ready check */
-  for (size_t i = 0U; i < ARRAY_SIZE(stepper); i++) {
-    if (!gpio_is_ready_dt(&stepper[i].dir) ||
-        !gpio_is_ready_dt(&stepper[i].step))
-      LOG_ERR("Stepper Motor %d: Pin %d is not ready", i, stepper[i].dir.pin);
+  for (size_t i = 0U; i < ARRAY_SIZE(stepper_motor); i++) {
+    if (!gpio_is_ready_dt(&stepper_motor[i].dir) ||
+        !gpio_is_ready_dt(&stepper_motor[i].step))
+      LOG_ERR("Stepper Motor %d: Pin %d is not ready", i,
+              stepper_motor[i].dir.pin);
 
-    if (gpio_pin_configure_dt(&(stepper[i].dir), GPIO_OUTPUT_INACTIVE) ||
-        gpio_pin_configure_dt(&(stepper[i].step), GPIO_OUTPUT_INACTIVE))
-      LOG_ERR("Stepper motor %d: Pin %d not configured", i, stepper[i].dir.pin);
+    if (gpio_pin_configure_dt(&(stepper_motor[i].dir), GPIO_OUTPUT_INACTIVE) ||
+        gpio_pin_configure_dt(&(stepper_motor[i].step), GPIO_OUTPUT_INACTIVE))
+      LOG_ERR("Stepper motor %d: Pin %d not configured", i,
+              stepper_motor[i].dir.pin);
   }
 
   /* led ready checks */
@@ -562,3 +540,4 @@ int main() {
 
   return 0;
 }
+

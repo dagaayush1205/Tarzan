@@ -6,7 +6,6 @@
 #include <zephyr/kernel.h>
 
 #include <Tarzan/lib/jerk_limiter.h>
-#include <Tarzan/lib/lqr.h>
 
 /* macro for linear interpolation */
 #define LINEAR_INTERPOLATION(x, in_min, in_max, out_min, out_max)              \

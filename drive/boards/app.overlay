@@ -63,32 +63,37 @@
 
 	steppermotors { 
 		compatible = "stepper-motors"; 
-		stepper_motor_1: motor_1 { 
+		dm5422_tt: dm5422_tt { 
 			label = "Turn Table"; 
 			dir-gpios = <&gpioe 13 GPIO_ACTIVE_LOW>; 
 			step-gpios = <&gpiof 11 GPIO_ACTIVE_LOW>;
+			channel = <7>; 
 		};
 	
-		stepper_motor_2: motor_2 {
+		yako: yako {
 			label = "First Link"; 
 			dir-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>;   
 			step-gpios = <&gpioc 0 GPIO_ACTIVE_LOW>;
+			channel = <3>; 
 		};
 	
-		stepper_motor_3: motor_3 { 
+		rhino: rhino { 
 			label = "Second Link";
 			dir-gpios = <&gpiog 14 GPIO_ACTIVE_HIGH>; 
 			step-gpios = <&gpiob 1 GPIO_ACTIVE_LOW>; 
+			channel = <2>; 
 		};
-		stepper_motor_4: motor_4 { 
-			label = "Pitch";
+		dm5422_pr1: dm5422_pr1 { 
+			label = "Pitch Roll 1";
 			dir-gpios = <&gpioa 8 GPIO_ACTIVE_LOW>;
 			step-gpios = <&gpiog 12 GPIO_ACTIVE_LOW>;
+			channel = <4>; 
 		};
-		stepper_motor_5: motor_5 { 
-			label = "Roll";
+		dm5422_pr2: dm5422_pr2 { 
+			label = "Pitch Roll 2";
 			dir-gpios = <&gpiog 9 GPIO_ACTIVE_LOW>;
 			step-gpios = <&gpiod 15 GPIO_ACTIVE_LOW>;
+			channel = <5>; 
 		};
 	};
 
@@ -100,7 +105,7 @@
 	};
 
 	chosen {
-		zephyr,console = &cdc_acm_uart0;
+		zephyr,console = &usart2;
 		zephyr,shell-uart = &usart2;
 	};
 };

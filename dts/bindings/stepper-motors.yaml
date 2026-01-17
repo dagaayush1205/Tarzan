@@ -21,3 +21,8 @@ child-binding:
       type: string
       description: |
         Human readable string describing the motor. 
+
+    channel:
+      required: false
+      type: int 
+      description: RC channel controlling the motor
