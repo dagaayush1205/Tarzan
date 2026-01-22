@@ -29,13 +29,13 @@
 			pwms  = <&pwm4 1 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
-			channel = <6>; 
+			channel = <3>; 
 		};
 		cytron2_2: pwm_6 {
 			pwms  = <&pwm4 2 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
-			channel = <10>; 
+			channel = <2>; 
 		};
 		servo_1: pwm_7 {
 			pwms  = <&pwm4 3 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
@@ -69,14 +69,12 @@
 			step-gpios = <&gpiof 11 GPIO_ACTIVE_LOW>;
 			channel = <7>; 
 		};
-	
 		yako: yako {
 			label = "First Link"; 
 			dir-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>;   
 			step-gpios = <&gpioc 0 GPIO_ACTIVE_LOW>;
 			channel = <3>; 
 		};
-	
 		rhino: rhino { 
 			label = "Second Link";
 			dir-gpios = <&gpiog 14 GPIO_ACTIVE_HIGH>; 

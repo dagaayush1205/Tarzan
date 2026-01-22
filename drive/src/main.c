@@ -34,7 +34,7 @@ static const struct device *const sbus_uart =
 /* sbc uart */
 static const struct device *const sbc_uart = DEVICE_DT_GET(DT_ALIAS(sbc_uart));
 /* gps uart */
-static const struct device *const gps_uart = DEVICE_DT_GET(DT_ALIAS(gps_uart));
+#define GNSS_MODEM DEVICE_DT_GET(DT_ALIAS(gps_uart))
 
 /* DT spec for pwm motors */
 #define PWM_MOTOR_SETUP(pwm_dev_id)                                            \
@@ -182,7 +182,8 @@ void gps_cb(const struct device *dev, const struct gnss_data *data) {
     com_tx.bs_msg_tx.data.longitude = data->nav_data.longitude;
     com_tx.bs_msg_tx.data.altitude = data->nav_data.altitude;
     com_tx.bs_msg_tx.data.bearing = data->nav_data.bearing;
-    k_work_submit_to_queue(&work_q, &(com_tx.sbc_tx_work_item));
+    LOG_INF("lat : % " PRIu64 " ",data->nav_data.latitude);
+    // k_work_submit_to_queue(&work_q, &(com_tx.sbc_tx_work_item));
   } else
     LOG_ERR("GPS: Unable to fix satellite");
 }
@@ -198,7 +199,7 @@ void cobs_cb(const struct device *dev, void *user_data) {
   if (!uart_irq_rx_ready(dev)) {
     return;
   }
-  while (uart_fifo_read(dev, &c, 1) == 1) {
+  while (uart_fifo_read(dev, &c, 1)) {
     if (c == 0x00 && com_ctx->cobs_bytes_read > 0) {
       com_ctx->rx_buf[com_ctx->cobs_bytes_read] = 0;
       if (com_ctx->cobs_bytes_read != (com_ctx->MSG_LEN - 1)) {
@@ -219,7 +220,7 @@ void sbus_work_handler(struct k_work *sbus_work_ptr) {
   uint8_t buffer[25] = {0};
   int err;
   k_msgq_get(&sbus_msgq, buffer, K_NO_WAIT);
-  err = parity_checker(packet[23]);
+  err = parity_checker(buffer[23]);
 
   if (err == 1) {
     gpio_pin_set_dt(&sbus_status_led, 0); // set sbus status led low
@@ -447,15 +448,20 @@ int main() {
   /* sbus uart ready check */
   if (!device_is_ready(sbus_uart))
     LOG_ERR("SBUS UART device not ready");
-  /* gps uart ready check */
-  if (!device_is_ready(gps_uart))
-    LOG_ERR("GPS UART device not ready");
   /* sbc uart ready check */
   if (!device_is_ready(sbc_uart))
     LOG_ERR("SBC UART device not ready");
   /* enable usb for sbc com */
   if (usb_enable(NULL))
     LOG_ERR("CDC ACM UART failed");
+
+  /* gps ready check*/
+  gnss_systems_t supported, enabled;
+  if (gnss_get_supported_systems(GNSS_MODEM, &supported) < 0) 
+    LOG_ERR("Failed to query supported systems");
+  
+  if (gnss_get_enabled_systems(GNSS_MODEM, &enabled) < 0)
+    LOG_ERR("Failed to query enabled systems");
 
   /* set sbus uart for interrupt */
   err = uart_irq_callback_user_data_set(sbus_uart, sbus_cb, NULL);
@@ -532,7 +538,7 @@ int main() {
   /* enable interrupt to receive cobs data */
   uart_irq_rx_enable(sbc_uart);
   /* enable interrupt to receive gps data */
-  GNSS_DATA_CALLBACK_DEFINE(gps_uart, gps_cb);
+  GNSS_DATA_CALLBACK_DEFINE(GNSS_MODEM, gps_cb);
 
   /* enabling stepper & mssg timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
