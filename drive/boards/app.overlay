@@ -29,13 +29,13 @@
 			pwms  = <&pwm4 1 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
-			channel = <3>; 
+			channel = <6>; 
 		};
 		cytron2_2: pwm_6 {
 			pwms  = <&pwm4 2 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;
 			min-pulse = <PWM_USEC(1100)>;
 			max-pulse = <PWM_USEC(1900)>;
-			channel = <2>; 
+			channel = <10>; 
 		};
 		servo_1: pwm_7 {
 			pwms  = <&pwm4 3 PWM_MSEC(20) (PWM_POLARITY_NORMAL)>;

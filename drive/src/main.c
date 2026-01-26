@@ -182,8 +182,7 @@ void gps_cb(const struct device *dev, const struct gnss_data *data) {
     com_tx.bs_msg_tx.data.longitude = data->nav_data.longitude;
     com_tx.bs_msg_tx.data.altitude = data->nav_data.altitude;
     com_tx.bs_msg_tx.data.bearing = data->nav_data.bearing;
-    LOG_INF("lat : % " PRIu64 " ",data->nav_data.latitude);
-    // k_work_submit_to_queue(&work_q, &(com_tx.sbc_tx_work_item));
+    k_work_submit_to_queue(&work_q, &(com_tx.sbc_tx_work_item));
   } else
     LOG_ERR("GPS: Unable to fix satellite");
 }
