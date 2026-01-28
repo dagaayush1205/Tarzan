@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,7 +27,7 @@ LOG_MODULE_REGISTER(Tarzan, CONFIG_TARZAN_LOG_LEVEL);
 #define STACK_SIZE 4096   // work_q thread stack size
 #define PRIORITY 2        // work_q thread priority
 #define STEPPER_TIMER 100 // stepper pulse width in microseconds
-#define JERK_LIMITER true
+#define JERK_LIMITER false
 
 /* sbus uart */
 static const struct device *const sbus_uart =
