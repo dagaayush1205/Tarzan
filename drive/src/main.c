@@ -64,7 +64,7 @@ const struct pwm_dt_spec error_led = PWM_DT_SPEC_GET(DT_ALIAS(pwm_led0));
 
 /* msg struct for rx coms */
 struct drive_msg {
-  struct DiffDriveTwist auto_cmd;
+  struct DiffDriveTwist cmd;
   uint32_t crc;
 };
 
@@ -107,6 +107,7 @@ struct drive_arg {
   struct DiffDriveTwist cmd;
   struct DiffDriveCtx *drive_init;
   uint8_t drive_raw_buffer[sizeof(struct drive_msg) + 2];
+  struct drive_msg auto_cmd;
 } drive;
 
 /* struct for arm variables */
@@ -128,7 +129,8 @@ struct com_rx_arg {
 } drive_com = {.work_item = &drive.auto_drive_work_item,
                .msgq_rx = &drive_msgq,
                .MSG_LEN = sizeof(struct drive_msg) + 2,
-               .rx_buf = drive.drive_raw_buffer};
+               .rx_buf = drive.drive_raw_buffer,
+               .msg_rx = &drive.auto_cmd};
 
 struct com_tx_arg {
   struct k_work sbc_tx_work_item;
@@ -251,7 +253,7 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
   k_msgq_get(com_info->msgq_rx, buf, K_MSEC(4));
 
   cobs_decode_result result = cobs_decode(
-      (com_info->msg_rx), sizeof(com_info->msg_rx), buf, com_info->MSG_LEN - 1);
+      (com_info->msg_rx), com_info->MSG_LEN - 2, buf, com_info->MSG_LEN - 1);
   if (result.status != COBS_DECODE_OK) {
     LOG_ERR("COBS Decode Failed %d\n", result.status);
     return;
@@ -353,16 +355,15 @@ void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
   struct drive_arg *drive_info =
       CONTAINER_OF(auto_drive_work_ptr, struct drive_arg, auto_drive_work_item);
 
-  struct drive_msg *msg = (struct drive_msg *)drive_info->drive_raw_buffer;
-
   // check crc
-  if (check_crc(drive_info->drive_raw_buffer, sizeof(struct drive_msg)) !=
-      msg->crc)
+  if (check_crc((uint8_t *)&drive_info->auto_cmd, sizeof(struct drive_msg))
+  !=
+      drive_info->auto_cmd.crc)
     return;
 
   // update drive
-  drive_info->cmd.linear_x = msg->auto_cmd.linear_x;
-  drive_info->cmd.angular_z = msg->auto_cmd.angular_z;
+  drive_info->cmd.linear_x = drive_info->auto_cmd.cmd.linear_x;
+  drive_info->cmd.angular_z = drive_info->auto_cmd.cmd.angular_z;
   diffdrive_update(drive_info->drive_init, drive_info->cmd);
 }
 
@@ -457,9 +458,9 @@ int main() {
 
   /* gps ready check*/
   gnss_systems_t supported, enabled;
-  if (gnss_get_supported_systems(GNSS_MODEM, &supported) < 0) 
+  if (gnss_get_supported_systems(GNSS_MODEM, &supported) < 0)
     LOG_ERR("Failed to query supported systems");
-  
+
   if (gnss_get_enabled_systems(GNSS_MODEM, &enabled) < 0)
     LOG_ERR("Failed to query enabled systems");
 
