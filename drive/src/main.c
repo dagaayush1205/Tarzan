@@ -61,29 +61,24 @@ static const struct gpio_dt_spec init_led =
 static const struct gpio_dt_spec sbus_status_led =
     GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 const struct pwm_dt_spec error_led = PWM_DT_SPEC_GET(DT_ALIAS(pwm_led0));
-/* Enum struct to define the diffrent autonomous modes */ 
-enum auto_state {
-  arm_mode=0,
-  drive_mode=1
-};
+/* Enum struct to define the diffrent autonomous modes */
+// enum auto_state { arm_mode = 0, drive_mode = 1 };
 /* msg struct for rx coms */
 struct auto_msg {
-  uint8_t state;
   struct DiffDriveTwist auto_cmd;
-  struct joint arm_cmd[6]; 
+  struct joint arm_cmd[6];
   uint32_t crc;
 };
-/* struct to store gps data */ 
+/* struct to store gps data */
 struct gps_data {
   int64_t latitude;
   int64_t longitude;
   int32_t altitude;
   int32_t bearing;
-
 };
 struct gps_send_data {
-  struct k_work gps_work_item; 
-}gps;
+  struct k_work gps_work_item;
+} gps;
 /* msg struct for tx coms */
 struct base_station_msg {
   struct gps_data data;
@@ -95,12 +90,12 @@ struct base_station_msg {
 K_MSGQ_DEFINE(sbus_msgq, 25 * sizeof(uint8_t), 10, 1);
 /* defining cobs message queue */
 K_MSGQ_DEFINE(drive_msgq, sizeof(struct auto_msg) + 2, 50, 1);
-/* defining cobs message queue for inverse kinematics */ 
-K_MSGQ_DEFINE(arm_msgq,sizeof(struct auto_msg)+2,50,1);
-/* defining the message queue for tx item arm */ 
-K_MSGQ_DEFINE(arm_tx_msgq,sizeof(struct joint),50,1);
-/* defining the message queue for tx item gps */ 
-K_MSGQ_DEFINE(gps_tx_msgq,sizeof(struct gps_data),50,1);
+/* defining cobs message queue for inverse kinematics */
+K_MSGQ_DEFINE(arm_msgq, sizeof(struct auto_msg) + 2, 50, 1);
+/* defining the message queue for tx item arm */
+K_MSGQ_DEFINE(arm_tx_msgq, sizeof(struct joint), 50, 1);
+/* defining the message queue for tx item gps */
+K_MSGQ_DEFINE(gps_tx_msgq, sizeof(struct gps_data), 50, 1);
 /* workq dedicated thread */
 K_THREAD_STACK_DEFINE(stack_area, STACK_SIZE);
 
@@ -114,20 +109,30 @@ struct k_mutex ch_writer_mutex;
 struct k_work_q work_q;
 /* sbus work item */
 struct k_work sbus_work_item;
-/*gps work item */ 
+/*gps work item */
 
 /* struct for drive variables */
 struct drive_arg {
-  struct k_work drive_work_item;      // drive work item
+  struct k_work drive_work_item; // drive work item
+
+  struct DiffDriveConfig drive_config;
+  struct DiffDriveTwist cmd;
+  struct DiffDriveCtx *drive_init;
+
+} drive;
+
+/* struct for autonomous message (to remove state requirement) */
+
+struct drive_ik_arg {
+
   struct k_work auto_drive_work_item; // autonomous drive work item
   struct DiffDriveConfig drive_config;
   struct DiffDriveTwist cmd;
   struct DiffDriveCtx *drive_init;
   struct k_work auto_arm_work_item;
-  uint8_t arm_work_buffer[sizeof(struct auto_msg)+2];
-  uint8_t drive_raw_buffer[sizeof(struct auto_msg) + 2];
-} drive;
-
+  uint8_t auto_work_buffer[sizeof(struct auto_msg) + 2];
+  uint8_t auto_raw_buffer[sizeof(struct auto_msg) + 2];
+} drive_ik;
 
 /* struct for arm variables */
 
@@ -135,11 +140,9 @@ struct arm_arg {
   enum StepperDirection dir[5];
   int pos[5];
   struct k_work channel_work_item;
-  struct k_work auto_arm_work_item;
   struct k_work arm_tx_work_item;
-  uint8_t arm_work_buffer[sizeof(struct auto_msg)+2];
 } arm;
-/*struct for communication */ 
+/*struct for communication */
 struct com_rx_arg {
   struct k_work cobs_rx_work_item;
   struct k_work *work_item;
@@ -150,8 +153,8 @@ struct com_rx_arg {
   uint8_t *rx_buf;
 };
 
-struct com_rx_arg drive_com; //auto drive struct 
-struct com_rx_arg arm_com; //auto arm struct
+struct com_rx_arg drive_com; // auto drive struct
+struct com_rx_arg arm_com;   // auto arm struct
 
 struct com_tx_arg {
   struct k_work sbc_tx_work_item;
@@ -172,7 +175,7 @@ const float wheel_velocity_range[] = {-10.0, 10.0};
 const uint16_t channel_range[] = {172, 1811};
 
 /* check if received cobs message is valid,
-* ret 0 if successfull */
+ * ret 0 if successfull */
 uint32_t check_crc(uint8_t *msg, size_t MSG_LEN) {
   uint32_t valid_crc;
   valid_crc = crc32_ieee((uint8_t *)msg, MSG_LEN - sizeof(uint32_t));
@@ -200,70 +203,47 @@ void sbus_cb(const struct device *dev, void *user_data) {
 }
 /* interrupt to store gps data */
 void gps_cb(const struct device *dev, const struct gnss_data *data) {
-  struct gps_data dummy_gps; 
+  struct gps_data dummy_gps = {0};
   if (data->info.fix_status != GNSS_FIX_STATUS_NO_FIX) {
-    /*
-    com_tx.bs_msg_tx.data.latitude = data->nav_data.latitude;
-    com_tx.bs_msg_tx.data.longitude = data->nav_data.longitude;
-    com_tx.bs_msg_tx.data.altitude = data->nav_data.altitude;
-    com_tx.bs_msg_tx.data.bearing = data->nav_data.bearing;
-    */ 
-    k_msgq_put(&gps_tx_msgq,&dummy_gps,K_NO_WAIT);
-
-    dummy_gps.latitude=data->nav_data.latitude;
-    dummy_gps.longitude=data->nav_data.longitude;
-    dummy_gps.altitude=data->nav_data.altitude;
-    dummy_gps.bearing=data->nav_data.bearing;
+    dummy_gps.latitude = data->nav_data.latitude;
+    dummy_gps.longitude = data->nav_data.longitude;
+    dummy_gps.altitude = data->nav_data.altitude;
+    dummy_gps.bearing = data->nav_data.bearing;
+    k_msgq_put(&gps_tx_msgq, &dummy_gps, K_NO_WAIT);
     k_work_submit_to_queue(&work_q, &gps.gps_work_item);
   } else
     LOG_ERR("GPS: Unable to fix satellite");
 }
-/* interrupt to send the current joint angles of the arm */ 
-/*
-struct joint1 {
-  float accel[3];
-  float gyro[3];
-  float mag[3];
-  float pitch;
-  float roll;
-  float yaw;
-};
-*/ 
-void angles_cb(const struct device *dev , struct joint angles){
-  // if (!uart_irq_update(sbus_uart))
-  //   return;
-  // if (!uart_irq_rx_ready(sbus_uart))
-  //   return;
-  if(k_msgq_put(&arm_tx_msgq,&angles,K_NO_WAIT)!=0){
+/* interrupt to send the current joint angles of the arm */
+void angles_cb(const struct device *dev, struct joint angles) {
+  if (k_msgq_put(&arm_tx_msgq, &angles, K_NO_WAIT) != 0) {
     return;
   }
-  k_work_submit_to_queue(&work_q,&arm.arm_tx_work_item);
+  k_work_submit_to_queue(&work_q, &arm.arm_tx_work_item);
 };
-/* gps work handler */ 
-void gps_work_handler(struct k_work *gps_work_item){
-  struct gps_data buffer={0};
-  if(k_msgq_get(&gps_tx_msgq,&buffer,K_NO_WAIT)!=0){
-    return ;
+/* gps work handler */
+void gps_work_handler(struct k_work *gps_work_item) {
+  struct gps_data buffer = {0};
+  if (k_msgq_get(&gps_tx_msgq, &buffer, K_NO_WAIT) != 0) {
+    return;
   }
-  com_tx.bs_msg_tx.data.latitude=buffer.latitude;
-  com_tx.bs_msg_tx.data.longitude=buffer.longitude;
-  com_tx.bs_msg_tx.data.altitude=buffer.altitude;
-  com_tx.bs_msg_tx.data.bearing=buffer.bearing;
-  k_work_submit_to_queue(&work_q,&(com_tx.sbc_tx_work_item));
-
+  com_tx.bs_msg_tx.data.latitude = buffer.latitude;
+  com_tx.bs_msg_tx.data.longitude = buffer.longitude;
+  com_tx.bs_msg_tx.data.altitude = buffer.altitude;
+  com_tx.bs_msg_tx.data.bearing = buffer.bearing;
+  k_work_submit_to_queue(&work_q, &(com_tx.sbc_tx_work_item));
 };
-/* work handler for the arms tx message */ 
-void arm_tx_work_handler(struct k_work *arm_tx_work_item){
+/* work handler for the arms tx message */
+void arm_tx_work_handler(struct k_work *arm_tx_work_item) {
   struct joint latest_angles;
 
-  for(int i=0;i<6;i++){
-    if(k_msgq_get(&arm_tx_msgq,&latest_angles,K_NO_WAIT)!=0){
-      return ;
+  for (int i = 0; i < 6; i++) {
+    if (k_msgq_get(&arm_tx_msgq, &latest_angles, K_NO_WAIT) != 0) {
+      return;
     }
-    com_tx.bs_msg_tx.angles[i]=latest_angles;
+    com_tx.bs_msg_tx.angles[i] = latest_angles;
   };
-  k_work_submit_to_queue(&work_q,&(com_tx.sbc_tx_work_item));
-
+  k_work_submit_to_queue(&work_q, &(com_tx.sbc_tx_work_item));
 };
 /* interrup to read cobs messages */
 void cobs_cb(const struct device *dev, void *user_data) {
@@ -328,33 +308,23 @@ void cobs_rx_work_handler(struct k_work *cobs_rx_work_ptr) {
 
   uint8_t buf[com_info->MSG_LEN];
   k_msgq_get(com_info->msgq_rx, buf, K_MSEC(4));
-  struct auto_msg autonomous_state; 
-  cobs_decode_result result = cobs_decode(
-      &(autonomous_state), sizeof(autonomous_state), buf, com_info->MSG_LEN - 1);
+  struct auto_msg autonomous_state;
+  cobs_decode_result result =
+      cobs_decode(&(autonomous_state), sizeof(autonomous_state), buf,
+                  com_info->MSG_LEN - 1);
   if (result.status != COBS_DECODE_OK) {
     LOG_ERR("COBS Decode Failed %d\n", result.status);
     return;
   }
-  uint8_t *data=(uint8_t *)&autonomous_state;
-  if(autonomous_state.state==arm_mode){
-     
-    for(int i=0;i<sizeof(struct auto_msg);i++){
-        drive.arm_work_buffer[i]=data[i];
-    };
-        
-    com_info->work_item=arm_com.work_item;
-  }else if(autonomous_state.state==drive_mode){ 
-    
-    for(int i=0;i<sizeof(struct auto_msg);i++){
-      drive.drive_raw_buffer[i]=data[i];
-    }; 
-
-
-
-    com_info->work_item=drive_com.work_item;
-  }
-  // submit autonomous work handler
-  k_work_submit_to_queue(&work_q, com_info->work_item);
+  uint8_t *data = (uint8_t *)&autonomous_state;
+  for (int i = 0; i < sizeof(struct auto_msg); i++) {
+    drive_ik.auto_work_buffer[i] = data[i];
+  };
+  // printk("autonomous message recieved successfully and reads : %u ,%u %u \n",
+  //        drive_ik.auto_work_buffer[0], drive_ik.auto_work_buffer[1],
+  //        drive_ik.auto_work_buffer[2]);
+  k_work_submit_to_queue(&work_q, &drive_ik.auto_arm_work_item);
+  k_work_submit_to_queue(&work_q, &drive_ik.auto_drive_work_item);
 }
 
 void sbc_tx_work_handler(struct k_work *sbc_tx_work_ptr) {
@@ -379,7 +349,6 @@ void sbc_tx_work_handler(struct k_work *sbc_tx_work_ptr) {
   for (int i = 0; i < BS_MSG_LEN; i++) {
     uart_poll_out(sbc_uart, bs_tx_buf[i]);
   }
-
 }
 
 int velocity_callback(const float *velocity_buffer, int buffer_len,
@@ -449,23 +418,24 @@ void drive_work_handler(struct k_work *drive_work_ptr) {
 }
 
 /* autonomous drive work handler */
-void auto_drive_work_handler(struct k_work *auto_drive_work_ptr) {
-  struct drive_arg *drive_info =
-      CONTAINER_OF(auto_drive_work_ptr, struct drive_arg, auto_drive_work_item);
+void auto_drive_work_handler(struct k_work *auto_work_ptr) {
+  struct drive_ik_arg *drive_info =
+      CONTAINER_OF(auto_work_ptr, struct drive_ik_arg, auto_drive_work_item);
 
-  struct auto_msg *msg = (struct auto_msg *)drive_info->drive_raw_buffer;
-
+  struct auto_msg *msg = (struct auto_msg *)drive_info->auto_work_buffer;
   // check crc
-  if (check_crc(drive_info->drive_raw_buffer, sizeof(struct auto_msg)) !=
+  if (check_crc(drive_info->auto_work_buffer, sizeof(struct auto_msg)) !=
       msg->crc)
     return;
 
   // update drive
-  drive_info->cmd.linear_x = drive_info->auto_cmd.cmd.linear_x;
-  drive_info->cmd.angular_z = drive_info->auto_cmd.cmd.angular_z;
+
+  drive_info->cmd.linear_x = msg->auto_cmd.linear_x;
+  drive_info->cmd.angular_z = msg->auto_cmd.angular_z;
+  // printk("The linear drive commands are (x,y): %f, %f",
+  //        drive_info->cmd.linear_x, drive_info->cmd.angular_z);
+
   diffdrive_update(drive_info->drive_init, drive_info->cmd);
-
-
 }
 
 /* arm channel work handler */
@@ -500,24 +470,28 @@ void arm_channel_work_handler(struct k_work *work_ptr) {
   k_mutex_unlock(&ch_reader_cnt_mutex);
 }
 void auto_arm_work_handler(struct k_work *auto_arm_work_ptr) {
-  struct drive_arg *arm_info= CONTAINER_OF(auto_arm_work_ptr,struct drive_arg,auto_arm_work_item);
-  struct auto_msg *msg=(struct auto_msg *)arm_info->arm_work_buffer;
-  if (check_crc(arm_info->arm_work_buffer, sizeof(struct auto_msg )) !=msg->crc)
-      return;
-  /* msg should be having x,y,z of target pos or the angles of ik */   
-  
-    // int target=(msg->arm_cmd[i]);
-    // int error=target-arm.pos[i];
-    // if(error>1){
-    //  arm_info->dir[i]=HIGH_PULSE; 
-    // }else if(error<-1){
-    //   arm_info->dir[i]=LOW_PULSE;
-    // }else {
-    //   arm_info->dir[i]=STOP_PULSE;
-    // }
-  
+  struct drive_ik_arg *arm_info =
+      CONTAINER_OF(auto_arm_work_ptr, struct drive_ik_arg, auto_arm_work_item);
+  struct auto_msg *msg = (struct auto_msg *)arm_info->auto_work_buffer;
+  if (check_crc(arm_info->auto_work_buffer, sizeof(struct auto_msg)) !=
+      msg->crc)
+    return;
+  /* msg should be having x,y,z of target pos or the angles of ik */
 
-  
+  // printk("Arm joint commands are as : %f %f %f %f %f %f \n",
+  //        msg->arm_cmd->accel[0], msg->arm_cmd->accel[1],
+  //        msg->arm_cmd->gyro[1], msg->arm_cmd->gyro[2], msg->arm_cmd->gyro[0],
+  //        msg->arm_cmd->accel[2]);
+  //
+  // // int target=(msg->arm_cmd[i]);
+  // int error=target-arm.pos[i];
+  // if(error>1){
+  //  arm_info->dir[i]=HIGH_PULSE;
+  // }else if(error<-1){
+  //   arm_info->dir[i]=LOW_PULSE;
+  // }else {
+  //   arm_info->dir[i]=STOP_PULSE;
+  // }
 }
 
 /* timer to write to stepper motors*/
@@ -533,12 +507,10 @@ int main() {
   LOG_INF("Tarzan version %s\nFile: %s\n", TARZAN_GIT_VERSION, __FILE__);
   if (usb_enable(NULL))
     LOG_ERR("CDC ACM UART failed");
-
+  drive_com.msgq_rx = &drive_msgq;
+  drive_com.MSG_LEN = sizeof(struct auto_msg) + 2;
+  drive_com.rx_buf = drive_ik.auto_raw_buffer;
   /* enable usb for sbc com */
-
-
-
-  int err;
 
   /* initializing work queue */
   k_work_queue_init(&work_q);
@@ -553,12 +525,12 @@ int main() {
   /* initializing work items */
   k_work_init(&sbus_work_item, sbus_work_handler);
   k_work_init(&(drive.drive_work_item), drive_work_handler);
-  k_work_init(&(drive.auto_drive_work_item), auto_drive_work_handler);
+  k_work_init(&(drive_ik.auto_drive_work_item), auto_drive_work_handler);
+  k_work_init(&(drive_ik.auto_arm_work_item), auto_arm_work_handler);
   k_work_init(&(arm.channel_work_item), arm_channel_work_handler);
-  k_work_init(&(drive.auto_arm_work_item),auto_arm_work_handler);
   k_work_init(&(drive_com.cobs_rx_work_item), cobs_rx_work_handler);
-  k_work_init(&(gps.gps_work_item),gps_work_handler);
-  k_work_init(&(arm.arm_tx_work_item),arm_tx_work_handler);
+  k_work_init(&(gps.gps_work_item), gps_work_handler);
+  k_work_init(&(arm.arm_tx_work_item), arm_tx_work_handler);
   k_work_init(&(com_tx.sbc_tx_work_item), sbc_tx_work_handler);
 
   /* initializing drive configs */
@@ -582,7 +554,6 @@ int main() {
   if (!device_is_ready(sbc_uart))
     LOG_ERR("SBC UART device not ready");
 
-
   /* gps ready check*/
   gnss_systems_t supported, enabled;
   if (gnss_get_supported_systems(GNSS_MODEM, &supported) < 0)
@@ -592,7 +563,7 @@ int main() {
     LOG_ERR("Failed to query enabled systems");
 
   /* set sbus uart for interrupt */
-  err = uart_irq_callback_user_data_set(sbus_uart, sbus_cb, NULL);
+  int err = uart_irq_callback_user_data_set(sbus_uart, sbus_cb, NULL);
   if (err < 0) {
     if (err == -ENOTSUP) {
       LOG_ERR("Interrupt-driven UART API support not enabled");
