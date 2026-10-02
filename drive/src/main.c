@@ -5,6 +5,7 @@
 #include <string.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/gnss.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/sensor.h>
@@ -22,6 +23,7 @@
 #include <Tarzan/lib/cobs.h>
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
+#include "dth11.h"
 
 LOG_MODULE_REGISTER(Tarzan, CONFIG_TARZAN_LOG_LEVEL);
 
@@ -29,6 +31,7 @@ LOG_MODULE_REGISTER(Tarzan, CONFIG_TARZAN_LOG_LEVEL);
 #define PRIORITY 2        // work_q thread priority
 #define STEPPER_TIMER 100 // stepper pulse width in microseconds
 #define JERK_LIMITER false
+#define BIO_SENSOR_PERIOD_MS 1000 // bio sensor sampling period
 
 /* sbus uart */
 static const struct device *const sbus_uart =
@@ -63,6 +66,26 @@ static const struct gpio_dt_spec sbus_status_led =
     GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 const struct pwm_dt_spec error_led = PWM_DT_SPEC_GET(DT_ALIAS(pwm_led0));
 
+/* DT spec for bio sensors */
+#define NO2_NODE DT_ALIAS(bio_sensor1)
+#define MQ2_NODE DT_ALIAS(bio_sensor2)
+#define MQ8_NODE DT_ALIAS(bio_sensor3)
+#define VOC_NODE DT_ALIAS(bio_sensor4)
+#define SOIL_NODE DT_ALIAS(bio_sensor5)
+
+static const struct adc_channel_cfg no2_cfg = ADC_CHANNEL_CFG_DT(NO2_NODE);
+static const struct adc_channel_cfg mq2_cfg = ADC_CHANNEL_CFG_DT(MQ2_NODE);
+static const struct adc_channel_cfg mq8_cfg = ADC_CHANNEL_CFG_DT(MQ8_NODE);
+static const struct adc_channel_cfg voc_cfg = ADC_CHANNEL_CFG_DT(VOC_NODE);
+static const struct adc_channel_cfg soil_cfg = ADC_CHANNEL_CFG_DT(SOIL_NODE);
+
+static const struct device *adc1_dev = DEVICE_DT_GET(DT_ALIAS(sensors14_channel));
+static const struct device *adc2_dev = DEVICE_DT_GET(DT_ALIAS(sensors5_channel));
+
+/* DT spec for dht11 sensor (digital gpio) */
+static const struct gpio_dt_spec dht_sensor =
+    GPIO_DT_SPEC_GET(DT_ALIAS(dth11_sensor), gpios);
+
 /* msg struct for rx coms */
 struct auto_msg {
   struct DiffDriveTwist auto_cmd;
@@ -78,10 +101,17 @@ struct gps_data {
   int32_t bearing;
 };
 
+/* strcut to store bio sensor data */ 
+struct biosensor_data {
+  uint16_t no2,mq2,mq8,voc,soil;
+  int16_t humidity,temperature;
+};
+
 /* msg struct for tx coms */
 struct base_station_msg {
   struct gps_data data;
   struct joint angles[6];
+  struct biosensor_data bio;
   uint32_t crc;
 };
 
@@ -499,6 +529,69 @@ void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
 
 K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
 
+/* timer to sample bio sensors (ADC channel + DHT11) */
+
+/* read one ADC channel and convert the raw sample to millivolts using its
+ * own devicetree resolution/vref (channels can differ, so both are passed
+ * in rather than hard-coded) */
+static int32_t read_adc_mv(const struct device *adc_dev,
+                           const struct adc_channel_cfg *cfg,
+                           uint16_t vref_mv, uint8_t resolution) {
+  uint16_t sample = 0;
+  struct adc_sequence seq = {
+      .channels = BIT(cfg->channel_id),
+      .buffer = &sample,
+      .buffer_size = sizeof(sample),
+      .resolution = resolution,
+  };
+  if (adc_read(adc_dev, &seq) < 0) {
+    return -1;
+  }
+  return ((int32_t)sample * vref_mv) / ((1 << resolution) - 1);
+}
+
+void bio_sensor_timer_handler(struct k_timer *bio_sensor_timer_ptr) {
+  ARG_UNUSED(bio_sensor_timer_ptr);
+  int dht11_data[5] = {0}; // [hum_int, hum_dec, temp_int, temp_dec, checksum]
+  int dht11_err;
+
+  int32_t no2 = read_adc_mv(adc1_dev, &no2_cfg, DT_PROP(NO2_NODE, zephyr_vref_mv),
+                            DT_PROP(NO2_NODE, zephyr_resolution));
+  int32_t mq2 = read_adc_mv(adc1_dev, &mq2_cfg, DT_PROP(MQ2_NODE, zephyr_vref_mv),
+                            DT_PROP(MQ2_NODE, zephyr_resolution));
+  int32_t mq8 = read_adc_mv(adc1_dev, &mq8_cfg, DT_PROP(MQ8_NODE, zephyr_vref_mv),
+                            DT_PROP(MQ8_NODE, zephyr_resolution));
+  int32_t voc = read_adc_mv(adc1_dev, &voc_cfg, DT_PROP(VOC_NODE, zephyr_vref_mv),
+                            DT_PROP(VOC_NODE, zephyr_resolution));
+  int32_t soil = read_adc_mv(adc2_dev, &soil_cfg, DT_PROP(SOIL_NODE, zephyr_vref_mv),
+                             DT_PROP(SOIL_NODE, zephyr_resolution));
+
+  dht11_err = read_sensor_values(dht_sensor, dht11_data);
+
+  /* store into the telemetry message sent to the base station */
+  com_tx.bs_msg_tx.bio.no2 = (uint16_t)no2;
+  com_tx.bs_msg_tx.bio.mq2 = (uint16_t)mq2;
+  com_tx.bs_msg_tx.bio.mq8 = (uint16_t)mq8;
+  com_tx.bs_msg_tx.bio.voc = (uint16_t)voc;
+  com_tx.bs_msg_tx.bio.soil = (uint16_t)soil;
+  if (dht11_err == 0) {
+    com_tx.bs_msg_tx.bio.humidity = (int16_t)dht11_data[0];
+    com_tx.bs_msg_tx.bio.temperature = (int16_t)dht11_data[2];
+  }
+
+  /* print all 5 analog sensor values (mV) + the dht11 reading */
+  LOG_INF("NO2: %d mV | MQ2: %d mV | MQ8: %d mV | VOC: %d mV | SOIL: %d mV",
+          no2, mq2, mq8, voc, soil);
+  if (dht11_err == 0) {
+    LOG_INF("DHT11 -> Humidity: %d.%d %%  Temperature: %d.%d C",
+            dht11_data[0], dht11_data[1], dht11_data[2], dht11_data[3]);
+  } else {
+    LOG_ERR("DHT11 read failed (err %d)", dht11_err);
+  }
+}
+
+K_TIMER_DEFINE(bio_sensor_timer, bio_sensor_timer_handler, NULL);
+
 int main() {
   LOG_INF("Tarzan version %s\nFile: %s\n", TARZAN_GIT_VERSION, __FILE__);
   if (usb_enable(NULL))
@@ -620,6 +713,31 @@ int main() {
     LOG_ERR("SBUS Status led not configured\n");
   }
 
+  /* bio sensor (ADC) ready check + channel setup */
+  if (!device_is_ready(adc1_dev)) {
+    LOG_ERR("Bio sensors: ADC1 device not ready\n");
+  } else {
+    if (adc_channel_setup(adc1_dev, &no2_cfg) < 0)
+      LOG_ERR("Bio sensor NO2: ADC channel setup failed\n");
+    if (adc_channel_setup(adc1_dev, &mq2_cfg) < 0)
+      LOG_ERR("Bio sensor MQ2: ADC channel setup failed\n");
+    if (adc_channel_setup(adc1_dev, &mq8_cfg) < 0)
+      LOG_ERR("Bio sensor MQ8: ADC channel setup failed\n");
+    if (adc_channel_setup(adc1_dev, &voc_cfg) < 0)
+      LOG_ERR("Bio sensor VOC: ADC channel setup failed\n");
+  }
+  if (!device_is_ready(adc2_dev)) {
+    LOG_ERR("Bio sensors: ADC2 device not ready\n");
+  } else {
+    if (adc_channel_setup(adc2_dev, &soil_cfg) < 0)
+      LOG_ERR("Bio sensor SOIL: ADC channel setup failed\n");
+  }
+
+  /* dht11 sensor ready check */
+  if (!gpio_is_ready_dt(&dht_sensor)) {
+    LOG_ERR("DHT11 sensor pin not ready\n");
+  }
+
   LOG_INF("Initialization completed successfully!\n");
 
   gpio_pin_set_dt(&init_led, 1); // set initialization led high
@@ -637,6 +755,9 @@ int main() {
 
   /* enabling stepper & mssg timer */
   k_timer_start(&stepper_timer, K_SECONDS(1), K_USEC((STEPPER_TIMER) / 2));
+
+  /* enabling bio sensor timer */
+  k_timer_start(&bio_sensor_timer, K_SECONDS(1), K_MSEC(BIO_SENSOR_PERIOD_MS));
 
   return 0;
 }

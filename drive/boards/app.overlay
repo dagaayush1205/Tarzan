@@ -100,11 +100,30 @@
 			telemetry-uart = &usart2;
 			sbus-uart = &usart6;
      			gps-uart = &gnss;
+			sensors14-channel = &adc1;
+			sensors5-channel = &adc2;
+			bio-sensor1 = &ad12_15;
+			bio-sensor2 = &ad123_10;
+			bio-sensor3 = &ad12_10;
+			bio-sensor4 = &ad12_5;
+			bio-sensor5 = &adc3_6;
+			dth11-sensor = &digital_bio;
 	};
 
 	chosen {
 		zephyr,console = &usart2;
 		zephyr,shell-uart = &usart2;
+	};
+
+	/* DHT11 digital sensor.
+	 * NOTE: PF11 is already used by dm5422_tt's step-gpios above, so this
+	 * uses PF12 instead. Confirm PF12 is actually free on the PCB before
+	 * flashing and change the pin below if it isn't. */
+	digitals {
+		compatible = "gpio-keys";
+		digital_bio: digital_sensor {
+			gpios = <&gpiof 12 GPIO_ACTIVE_HIGH>;
+		};
 	};
 };
 
@@ -181,5 +200,73 @@
 		status = "okay";
 		pinctrl-0 = <&tim13_ch1_pa6>;
 		pinctrl-names = "default";
+	};
+};
+
+/* bio sensors: 4 channels on ADC1 (NO2, MQ2, MQ8, VOC) */
+&adc1 {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	st,adc-clock-source = "SYNC";
+	st,adc-prescaler = <4>;
+
+	ad12_15: channel@f {
+		reg = <15>;
+		status = "okay";
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS,50)>;
+		zephyr,resolution = <12>;
+		zephyr,vref-mv = <3300>;
+	};
+
+	ad123_10: channel@a {
+		reg = <10>;
+		status = "okay";
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS,50)>;
+		zephyr,resolution = <12>;
+		zephyr,vref-mv = <3300>;
+	};
+
+	ad12_10: channel@d {
+		reg = <13>;
+		status = "okay";
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS,50)>;
+		zephyr,resolution = <12>;
+		zephyr,vref-mv = <3300>;
+	};
+
+	ad12_5: channel@5 {
+		reg = <5>;
+		status = "okay";
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS,50)>;
+		zephyr,resolution = <12>;
+		zephyr,vref-mv = <3300>;
+	};
+};
+
+/* bio sensors: 1 channel on ADC2 (SOIL) */
+&adc2 {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	st,adc-clock-source = "SYNC";
+	st,adc-prescaler = <4>;
+
+	adc3_6: channel@6 {
+		reg = <6>;
+		status = "okay";
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS,50)>;
+		zephyr,resolution = <12>;
+		zephyr,vref-mv = <3300>;
 	};
 };
