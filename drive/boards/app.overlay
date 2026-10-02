@@ -115,10 +115,6 @@
 		zephyr,shell-uart = &usart2;
 	};
 
-	/* DHT11 digital sensor.
-	 * NOTE: PF11 is already used by dm5422_tt's step-gpios above, so this
-	 * uses PF12 instead. Confirm PF12 is actually free on the PCB before
-	 * flashing and change the pin below if it isn't. */
 	digitals {
 		compatible = "gpio-keys";
 		digital_bio: digital_sensor {
@@ -252,7 +248,6 @@
 	};
 };
 
-/* bio sensors: 1 channel on ADC2 (SOIL) */
 &adc2 {
 	status = "okay";
 	#address-cells = <1>;

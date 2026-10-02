@@ -1,4 +1,9 @@
-// TO-DO : complete inverse pipeline + test if not checking autonomous state causes issues
+/* TO-DO : 
+1. complete inverse pipeline
+2. test if not checking autonomous state causes issues
+3. thread safe base station message 
+4. fix bio sensors pipeline
+*/ 
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -23,7 +28,7 @@
 #include <Tarzan/lib/cobs.h>
 #include <Tarzan/lib/drive.h>
 #include <Tarzan/lib/sbus.h>
-#include "dth11.h"
+#include <Tarzan/lib/dht11.h>
 
 LOG_MODULE_REGISTER(Tarzan, CONFIG_TARZAN_LOG_LEVEL);
 
@@ -67,22 +72,13 @@ static const struct gpio_dt_spec sbus_status_led =
 const struct pwm_dt_spec error_led = PWM_DT_SPEC_GET(DT_ALIAS(pwm_led0));
 
 /* DT spec for bio sensors */
-#define NO2_NODE DT_ALIAS(bio_sensor1)
-#define MQ2_NODE DT_ALIAS(bio_sensor2)
-#define MQ8_NODE DT_ALIAS(bio_sensor3)
-#define VOC_NODE DT_ALIAS(bio_sensor4)
-#define SOIL_NODE DT_ALIAS(bio_sensor5)
-
-static const struct adc_channel_cfg no2_cfg = ADC_CHANNEL_CFG_DT(NO2_NODE);
-static const struct adc_channel_cfg mq2_cfg = ADC_CHANNEL_CFG_DT(MQ2_NODE);
-static const struct adc_channel_cfg mq8_cfg = ADC_CHANNEL_CFG_DT(MQ8_NODE);
-static const struct adc_channel_cfg voc_cfg = ADC_CHANNEL_CFG_DT(VOC_NODE);
-static const struct adc_channel_cfg soil_cfg = ADC_CHANNEL_CFG_DT(SOIL_NODE);
-
+static const struct adc_channel_cfg no2_cfg = ADC_CHANNEL_CFG_DT(DT_ALIAS(bio_sensor1));
+static const struct adc_channel_cfg mq2_cfg = ADC_CHANNEL_CFG_DT(DT_ALIAS(bio_sensor2));
+static const struct adc_channel_cfg mq8_cfg = ADC_CHANNEL_CFG_DT(DT_ALIAS(bio_sensor3));
+static const struct adc_channel_cfg voc_cfg = ADC_CHANNEL_CFG_DT(DT_ALIAS(bio_sensor4));
+static const struct adc_channel_cfg soil_cfg = ADC_CHANNEL_CFG_DT(DT_ALIAS(bio_sensor5));
 static const struct device *adc1_dev = DEVICE_DT_GET(DT_ALIAS(sensors14_channel));
 static const struct device *adc2_dev = DEVICE_DT_GET(DT_ALIAS(sensors5_channel));
-
-/* DT spec for dht11 sensor (digital gpio) */
 static const struct gpio_dt_spec dht_sensor =
     GPIO_DT_SPEC_GET(DT_ALIAS(dth11_sensor), gpios);
 
@@ -243,7 +239,7 @@ void gps_cb(const struct device *dev, const struct gnss_data *data) {
     LOG_ERR("GPS: Unable to fix satellite");
 }
 
-/* interrupt to send the current joint angles of the arm 
+// interrupt to send the current joint angles of the arm 
 void angles_cb(const struct device *dev, struct joint angles) {
   if (k_msgq_put(&arm_tx_msgq, &angles, K_NO_WAIT) != 0) {
     return;
@@ -527,33 +523,11 @@ void stepper_timer_handler(struct k_timer *stepper_timer_ptr) {
   }
 }
 
-K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
-
 /* timer to sample bio sensors (ADC channel + DHT11) */
-
-/* read one ADC channel and convert the raw sample to millivolts using its
- * own devicetree resolution/vref (channels can differ, so both are passed
- * in rather than hard-coded) */
-static int32_t read_adc_mv(const struct device *adc_dev,
-                           const struct adc_channel_cfg *cfg,
-                           uint16_t vref_mv, uint8_t resolution) {
-  uint16_t sample = 0;
-  struct adc_sequence seq = {
-      .channels = BIT(cfg->channel_id),
-      .buffer = &sample,
-      .buffer_size = sizeof(sample),
-      .resolution = resolution,
-  };
-  if (adc_read(adc_dev, &seq) < 0) {
-    return -1;
-  }
-  return ((int32_t)sample * vref_mv) / ((1 << resolution) - 1);
-}
-
 void bio_sensor_timer_handler(struct k_timer *bio_sensor_timer_ptr) {
   ARG_UNUSED(bio_sensor_timer_ptr);
+
   int dht11_data[5] = {0}; // [hum_int, hum_dec, temp_int, temp_dec, checksum]
-  int dht11_err;
 
   int32_t no2 = read_adc_mv(adc1_dev, &no2_cfg, DT_PROP(NO2_NODE, zephyr_vref_mv),
                             DT_PROP(NO2_NODE, zephyr_resolution));
@@ -566,9 +540,8 @@ void bio_sensor_timer_handler(struct k_timer *bio_sensor_timer_ptr) {
   int32_t soil = read_adc_mv(adc2_dev, &soil_cfg, DT_PROP(SOIL_NODE, zephyr_vref_mv),
                              DT_PROP(SOIL_NODE, zephyr_resolution));
 
-  dht11_err = read_sensor_values(dht_sensor, dht11_data);
+  int dht11_err = read_sensor_values(dht_sensor, dht11_data);
 
-  /* store into the telemetry message sent to the base station */
   com_tx.bs_msg_tx.bio.no2 = (uint16_t)no2;
   com_tx.bs_msg_tx.bio.mq2 = (uint16_t)mq2;
   com_tx.bs_msg_tx.bio.mq8 = (uint16_t)mq8;
@@ -579,9 +552,6 @@ void bio_sensor_timer_handler(struct k_timer *bio_sensor_timer_ptr) {
     com_tx.bs_msg_tx.bio.temperature = (int16_t)dht11_data[2];
   }
 
-  /* print all 5 analog sensor values (mV) + the dht11 reading */
-  LOG_INF("NO2: %d mV | MQ2: %d mV | MQ8: %d mV | VOC: %d mV | SOIL: %d mV",
-          no2, mq2, mq8, voc, soil);
   if (dht11_err == 0) {
     LOG_INF("DHT11 -> Humidity: %d.%d %%  Temperature: %d.%d C",
             dht11_data[0], dht11_data[1], dht11_data[2], dht11_data[3]);
@@ -591,6 +561,7 @@ void bio_sensor_timer_handler(struct k_timer *bio_sensor_timer_ptr) {
 }
 
 K_TIMER_DEFINE(bio_sensor_timer, bio_sensor_timer_handler, NULL);
+K_TIMER_DEFINE(stepper_timer, stepper_timer_handler, NULL);
 
 int main() {
   LOG_INF("Tarzan version %s\nFile: %s\n", TARZAN_GIT_VERSION, __FILE__);
