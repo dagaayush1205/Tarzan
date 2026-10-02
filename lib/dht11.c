@@ -1,8 +1,9 @@
-#include <stdio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/adc.h>
+#include <zephyr/drivers/sensor.h>
 
-int read_sensor_values(struct gpio_dt_spec dev , int data[5]){
+int read_sensor_values(struct gpio_dt_spec dev , int& data){
   int j;
   uint32_t start=0;
   for(int i=0;i<5;i++){
@@ -38,3 +39,19 @@ int read_sensor_values(struct gpio_dt_spec dev , int data[5]){
   return 0;
 
 };
+
+int32_t read_adc_mv(const struct device *adc_dev,
+                           const struct adc_channel_cfg *cfg,
+                           uint16_t vref_mv, uint8_t resolution) {
+  uint16_t sample = 0;
+  struct adc_sequence seq = {
+      .channels = BIT(cfg->channel_id),
+      .buffer = &sample,
+      .buffer_size = sizeof(sample),
+      .resolution = resolution,
+  };
+  if (adc_read(adc_dev, &seq) < 0) {
+    return -1;
+  }
+  return ((int32_t)sample * vref_mv) / ((1 << resolution) - 1);
+}
